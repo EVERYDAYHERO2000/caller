@@ -412,6 +412,7 @@ class SkillIn(BaseModel):
     collect: list[str] | None = Field(None, description="Что узнать и сохранить в итог: «номер машины», «время приезда»")
     sms_to: str | None = Field(None, description="Номер, на который скилл может отправить SMS со сводкой")
     always: bool | None = Field(None, description="Подключать сразу, в начале звонка")
+    knows_owner: bool | None = Field(None, description="Скилл знает адрес и поля контакта «Этот номер»")
 
 
 @router.get("/skills", tags=["skills"])
@@ -514,6 +515,7 @@ class ContactIn(BaseModel):
     name: str | None = None
     last_name: str | None = Field(None, description="Фамилия")
     relation: str | None = Field(None, description="Кем контакт приходится владельцу системы: мама, жена, директор…")
+    address: str | None = Field(None, description="Адрес")
     fields: list[ContactField] | None = Field(None, description="Свои поля контакта (ключ — значение)")
     phone: str | None = None
     company: str | None = None
@@ -529,8 +531,8 @@ def list_contacts(q: str = Query("", description="Поиск по имени, ф
         return db.fetch_all("contacts", "SELECT * FROM contacts WHERE name LIKE ? OR last_name LIKE ? OR phone LIKE ? "
                                         "OR company LIKE ? OR tags LIKE ? OR (name || ' ' || last_name) LIKE ? "
                                         "OR relation LIKE ? OR fields LIKE ? "
-                                        "ORDER BY name, last_name", (like,) * 8)
-    return db.fetch_all("contacts", "SELECT * FROM contacts ORDER BY name, last_name")
+                                        "OR address LIKE ? ORDER BY is_self DESC, name, last_name", (like,) * 9)
+    return db.fetch_all("contacts", "SELECT * FROM contacts ORDER BY is_self DESC, name, last_name")
 
 
 @router.get("/contacts/{contact_id}", tags=["contacts"])
@@ -550,10 +552,12 @@ def create_contact(body: ContactIn):
 
 @router.put("/contacts/{contact_id}", tags=["contacts"])
 def update_contact(contact_id: int, body: ContactIn):
-    _or_404(db.get("contacts", contact_id))
+    c = _or_404(db.get("contacts", contact_id))
     data = body.model_dump(exclude_none=True)
     if "phone" in data:
         data["phone"] = db.normalize_phone(data["phone"])
+        if c.get("is_self") and data["phone"] != db.normalize_phone(c.get("phone") or ""):
+            db.set_settings({"modem.own_number": data["phone"]})  # «Этот номер» is the SIM's number
     return db.update("contacts", contact_id, {**data, "updated_at": db.now()})
 
 
@@ -587,4 +591,6 @@ def contact_history_clear(contact_id: int):
 
 @router.delete("/contacts/{contact_id}", tags=["contacts"])
 def delete_contact(contact_id: int):
+    if (db.get("contacts", contact_id) or {}).get("is_self"):
+        raise HTTPException(409, "контакт «Этот номер» удалить нельзя")
     return {"deleted": db.delete("contacts", contact_id)}

@@ -162,6 +162,8 @@ async def put_settings(values: dict[str, Any]):
     db.set_settings(values)
     if values.get("fish.api_key") and values["fish.api_key"] != old.get("fish.api_key"):
         voices.start_import()  # a new Fish key: add 50 Russian voices from its library
+    if "modem.own_number" in values:
+        db.ensure_self_contact()  # the contact «Этот номер» follows the SIM's number
     if any(k in values and values[k] != old.get(k) for k in ("telegram.token", "telegram.enabled")):
         from ..telegram_bot import bot
         bot.start()  # a new token / switched on or off

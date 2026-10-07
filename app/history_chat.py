@@ -97,7 +97,7 @@ def _transcript(call_id: int) -> str:
 
 # the phone book card as the model reads it: every field that has a value
 CARD_FIELDS = [("name", "Имя"), ("last_name", "Фамилия"), ("relation", "Кем приходится владельцу системы"),
-               ("phone", "Телефон"), ("company", "Компания"),
+               ("phone", "Телефон"), ("address", "Адрес"), ("company", "Компания"),
                ("email", "E-mail"), ("tags", "Теги"), ("notes", "Комментарий"),
                ("created_at", "Добавлен в контакты"), ("updated_at", "Карточка изменена")]
 

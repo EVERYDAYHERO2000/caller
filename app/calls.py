@@ -89,6 +89,18 @@ def script_skills(script: dict | None) -> tuple[list[dict], list[dict]]:
     return [x for x in rows if x.get("always")], [x for x in rows if not x.get("always")]
 
 
+def owner_text() -> str:
+    """The owner's card («Этот номер») for a skill allowed to know it: the address and the other fields."""
+    c = db.self_contact() or {}
+    rows = [("Адрес", c.get("address")), ("Телефон", spoken_phone(c.get("phone") or "") if c.get("phone") else ""),
+            *db.contact_fields(c), ("Комментарий", c.get("notes"))]
+    lines = [f"- {k}: {str(v).strip()}" for k, v in rows if v and str(v).strip()]
+    if not any(k == "Адрес" for k, v in rows if v):
+        lines.insert(0, "- Адрес: не указан — скажи, что уточнишь у хозяина и пришлёшь SMS")
+    return ("Данные хозяина (карточка «Этот номер») — называй их только в рамках этого скилла и только тому, кому "
+            "они нужны по делу:\n" + "\n".join(lines))
+
+
 def skill_text(skill: dict) -> str:
     """What the agent gets when a skill is loaded."""
     parts = [f"Скилл «{skill['name']}»" + (f" (когда {skill['trigger'].strip().rstrip('.')})" if skill.get("trigger") else "")
@@ -98,6 +110,8 @@ def skill_text(skill: dict) -> str:
     if skill.get("sms_to"):
         parts.append("Когда всё нужное узнаешь, отправь короткую сводку функцией notify_sms (одним сообщением, "
                      "без лишних слов) — её получит владелец.")
+    if skill.get("knows_owner"):
+        parts.append(owner_text())
     return "\n".join(p for p in parts if p.strip())
 
 
@@ -134,6 +148,7 @@ def contact_brief(contact: dict | None) -> str:
         return ""
     rows = [("Имя", contact.get("name")), ("Фамилия", contact.get("last_name")),
             ("Кем приходится владельцу этого телефона (тому, от чьего имени ты говоришь)", contact.get("relation")),
+            ("Адрес", contact.get("address")),
             ("Компания", contact.get("company")), ("Телефон", contact.get("phone")), ("Почта", contact.get("email")),
             ("Теги", contact.get("tags")), ("Комментарий", contact.get("notes")), *db.contact_fields(contact)]
     lines = [f"- {k}: {str(v).strip()}" for k, v in rows if v and str(v).strip()]
@@ -168,6 +183,10 @@ def build_instructions(agent: dict, script: dict | None, variables: dict, direct
     name = _persona_name(agent)
     if name:
         intro += f" Тебя зовут {name}."
+    me = db.self_contact() or {}
+    owner = db.contact_label(me) if (me.get("name") or "").strip() not in ("", db.SELF_NAME) else ""
+    if owner:
+        intro += f" Хозяина этого телефона, от чьего имени ты говоришь, зовут {owner}."
     mine = own_number()
     if mine:
         intro += (f" Твой номер телефона — {spoken_phone(mine)}"

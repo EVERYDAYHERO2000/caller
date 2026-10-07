@@ -310,7 +310,8 @@ JSON_COLUMNS = {
     "skills": {"collect"},
     "tasks": {"event", "geo"},
 }
-BOOL_COLUMNS = {"agents": {"speaks_first", "fillers"}, "sms": {"is_read"}, "skills": {"always"}}
+BOOL_COLUMNS = {"agents": {"speaks_first", "fillers"}, "sms": {"is_read"}, "skills": {"always", "knows_owner"},
+                "contacts": {"is_self"}}
 
 # SpeechKit voices and their roles (emotion / delivery), usable in the Realtime API as
 # audio.output.voice + audio.output.role. https://aistudio.yandex.ru/docs/ru/speechkit/tts/voices
@@ -433,6 +434,7 @@ def connect():
     _migrate()
     _conn.commit()
     _seed()
+    ensure_self_contact()
     _seed_voices()
     _drop_unsupported_voices()
 
@@ -504,6 +506,15 @@ def _migrate():
     if "fields" not in cols_c:
         # the contact's own extra fields: [{"key": "День рождения", "value": "12 марта"}, …]
         _conn.execute("ALTER TABLE contacts ADD COLUMN fields TEXT DEFAULT '[]'")
+    if "address" not in cols_c:
+        _conn.execute("ALTER TABLE contacts ADD COLUMN address TEXT DEFAULT ''")
+    if "is_self" not in cols_c:
+        # the contact «Этот номер»: the owner — the SIM's number, the address, how to get there…
+        _conn.execute("ALTER TABLE contacts ADD COLUMN is_self INTEGER DEFAULT 0")
+    cols_k = {r[1] for r in _conn.execute("PRAGMA table_info(skills)")}
+    if "knows_owner" not in cols_k:
+        # the skill gets the owner's address and the fields of «Этот номер» (only while it's loaded)
+        _conn.execute("ALTER TABLE skills ADD COLUMN knows_owner INTEGER DEFAULT 0")
     cols_u = {r[1] for r in _conn.execute("PRAGMA table_info(users)")}
     if "calls_seen_at" not in cols_u:
         _conn.execute("ALTER TABLE users ADD COLUMN calls_seen_at TEXT")
@@ -733,6 +744,25 @@ def attach_contacts(rows: list[dict], field: str = "number") -> list[dict]:
         r["contact_id"] = c["id"] if c else None
         r["contact_name"] = contact_label(c) or None
     return rows
+
+
+SELF_NAME = "Этот номер"
+
+
+def self_contact() -> dict | None:
+    return fetch_one("contacts", "SELECT * FROM contacts WHERE is_self=1 ORDER BY id LIMIT 1")
+
+
+def ensure_self_contact() -> dict:
+    """The contact «Этот номер» always exists; its phone is the SIM's number from «Настройки → Оператор»."""
+    c = self_contact()
+    phone = normalize_phone(setting("modem.own_number", "") or "")
+    if not c:
+        ts = now()
+        return insert("contacts", {"name": SELF_NAME, "phone": phone, "is_self": 1, "created_at": ts, "updated_at": ts})
+    if phone and normalize_phone(c.get("phone") or "") != phone:
+        return update("contacts", c["id"], {"phone": phone, "updated_at": now()})
+    return c
 
 
 def find_contact(number: str) -> dict | None:

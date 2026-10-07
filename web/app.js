@@ -2117,7 +2117,7 @@ VIEWS.contacts = {
     const list = (q ? await api('/contacts?q=' + encodeURIComponent(q)) : state.contacts).filter((c) => !tag || contactTags(c).includes(tag));
     $('#rows', root).innerHTML = list.map((c) => `<tr class="clickable" data-id="${c.id}">
       <td class="avatar-cell"><div class="avatar"${avatarStyle(fullName(c) || '#')}>${esc(initials(fullName(c) || '#'))}</div></td>
-      <td style="max-width:260px">${entityCell(fullName(c), c.relation || '')}</td>
+      <td style="max-width:260px">${entityCell(fullName(c), c.is_self ? 'Этот номер · это вы' : c.relation || '')}</td>
       <td>${esc(c.phone)}</td><td>${esc(c.company) || dash}</td>
       <td>${(c.tags || '').split(',').filter(Boolean).map((t) => `<span class="chip">${esc(t.trim())}</span>`).join(' ') || dash}</td>
       <td class="ellipsis" style="max-width:240px" title="${esc(c.notes)}">${esc(c.notes) || dash}</td>
@@ -2132,8 +2132,8 @@ VIEWS.contacts = {
         { label: 'Звонок агентом', icon: 'bot', run: () => { location.hash = `#/calls?number=${encodeURIComponent(byId(id).phone)}`; } },
         { label: 'Позвонить', icon: 'phoneOut', run: () => { location.hash = `#/calls?mode=browser&number=${encodeURIComponent(byId(id).phone)}`; } },
         { label: 'Написать SMS', icon: 'message', run: () => { location.hash = `#/sms?number=${encodeURIComponent(byId(id).phone)}`; } },
-        '-',
-        { label: 'Удалить', icon: 'trash', danger: true, run: () => confirmBox('Удалить контакт?', async () => { await api('/contacts/' + id, { method: 'DELETE' }); this.load(root); }) },
+        ...(byId(id).is_self ? [] : ['-',  // «Этот номер» stays
+          { label: 'Удалить', icon: 'trash', danger: true, run: () => confirmBox('Удалить контакт?', async () => { await api('/contacts/' + id, { method: 'DELETE' }); this.load(root); }) }]),
       ],
     });
   },
@@ -2149,11 +2149,15 @@ function editContact(c, done, tab = 0) {
   const form = `<form class="form" id="cf"><div class="form-2">
       <div class="field"><label>Имя *</label><input name="name" value="${esc(c.name)}"></div>
       <div class="field"><label>Фамилия</label><input name="last_name" value="${esc(c.last_name)}"></div>
-      <div class="field"><label>Телефон *</label><input name="phone" value="${esc(c.phone)}" placeholder="+7…"></div>
+      <div class="field"><label>Телефон *</label><input name="phone" value="${esc(c.phone)}" placeholder="+7…">
+        ${c.is_self ? '<span class="hint">Номер SIM-карты Caller — тот же, что в «Настройки → Оператор». Меняется в обоих местах.</span>' : ''}</div>
       <div class="field"><label>Компания</label><input name="company" value="${esc(c.company)}"></div>
       <div class="field"><label>E-mail</label><input name="email" value="${esc(c.email)}"></div></div>
+      <div class="field"><label>Адрес</label><input name="address" value="${esc(c.address)}" placeholder="Город, улица, дом — или СНТ, участок">
+        ${c.is_self ? '<span class="hint">Агент назовёт адрес и поля этой карточки только в скиллах с отметкой «Знает адрес из „Этот номер“» — например, курьеру. В остальных разговорах он его не знает.</span>' : ''}</div>
+      ${c.is_self ? `<p class="small muted" style="margin:0">Это вы. Имя отсюда агент называет как имя хозяина. Добавьте свои поля, которые пригодятся скиллам: «Как доехать», «Код ворот», «Где оставлять посылки».</p>` : `
       <div class="field"><label>Связь со звонящим</label><input name="relation" value="${esc(c.relation)}" placeholder="Мама, жена, директор…">
-        <span class="hint">Кем человек приходится вам — владельцу системы. Агент будет говорить с ним с учётом этого.</span></div>
+        <span class="hint">Кем человек приходится вам — владельцу системы. Агент будет говорить с ним с учётом этого.</span></div>`}
       <div class="field"><label>Теги</label><input type="hidden" name="tags" value="${esc(c.tags)}" data-tag-input></div>
       <div class="field"><label>Свои поля</label>
         <div class="kv-fields" id="kv-fields">${(c.fields || []).map(kvFieldRow).join('')}</div>
@@ -2407,7 +2411,7 @@ VIEWS.skills = {
     const q = $('#q', root).value.trim().toLowerCase();
     const list = this.items.filter((x) => !q || [x.name, x.trigger, x.instructions].some((v) => (v || '').toLowerCase().includes(q)));
     $('#rows', root).innerHTML = list.map((x) => `<tr class="clickable" data-id="${x.id}">
-      <td style="max-width:240px">${entityCell(x.name, x.always ? 'подключается сразу' : '')}</td>
+      <td style="max-width:240px">${entityCell(x.name, [x.always ? 'подключается сразу' : '', x.knows_owner ? 'знает ваш адрес' : ''].filter(Boolean).join(' · '))}</td>
       <td class="ellipsis" style="max-width:300px" title="${esc(x.trigger)}">${esc(x.trigger) || dash}</td>
       <td>${(x.collect || []).map((c) => `<span class="chip">${esc(c)}</span>`).join(' ') || dash}${x.sms_to ? ` <span class="chip" title="Отправляет SMS-сводку на ${esc(x.sms_to)}">SMS</span>` : ''}</td>
       <td class="ellipsis" style="max-width:220px" title="${esc((x.scripts || []).join(', '))}">${esc((x.scripts || []).join(', ')) || '<span class="muted small">ни в одном</span>'}</td>
@@ -2434,6 +2438,8 @@ function editSkill(x, done) {
         <span class="hint">Агент спросит это у собеседника и запишет в итог — например, «номер машины», «время приезда».</span></div>
       <div class="field"><label>SMS-сводка на номер</label><input name="sms_to" value="${esc(x.sms_to)}" placeholder="+7 900 000-00-00 — необязательно">
         <span class="hint">Когда агент всё узнает, он отправит на этот номер короткую сводку — например, охране номер машины для пропуска.</span></div>
+      <label class="switch"><input type="checkbox" name="knows_owner" ${x.knows_owner ? 'checked' : ''}> Знает адрес из контакта «Этот номер»</label>
+      <span class="hint" style="margin-top:-8px">Пока скилл подключён, агент знает ваш адрес и поля карточки «Этот номер» (как доехать, код ворот…) и может назвать их собеседнику. Без отметки адреса агент не знает.</span>
       <label class="switch"><input type="checkbox" name="always" ${x.always ? 'checked' : ''}> Подключать сразу, в начале звонка</label></form>`,
     onMount: (m) => {
       tagInput($('[name=collect]', m), { placeholder: 'Добавить поле…', create: (t) => `Добавить «${t}»`,
@@ -2443,7 +2449,7 @@ function editSkill(x, done) {
     buttons: [{ label: 'Отмена', cls: 'btn-ghost' }, { label: 'Сохранить', cls: 'btn-primary', onClick: async (m) => {
       const f = formData($('#skf', m));
       if (!f.name.trim()) throw new Error('Укажите название');
-      const body = { name: f.name.trim(), trigger: f.trigger.trim(), instructions: f.instructions, sms_to: f.sms_to.trim(), always: !!f.always,
+      const body = { name: f.name.trim(), trigger: f.trigger.trim(), instructions: f.instructions, sms_to: f.sms_to.trim(), always: !!f.always, knows_owner: !!f.knows_owner,
         collect: f.collect.split(',').map((t) => t.trim()).filter(Boolean) };
       await api(x.id ? '/skills/' + x.id : '/skills', { method: x.id ? 'PUT' : 'POST', body });
       toast('Скилл сохранён', 'ok'); done?.();
@@ -3154,7 +3160,7 @@ VIEWS.settings = {
         <form class="form mt" id="simform"><div class="field"><label>Номер SIM-карты</label>
           <div class="row" style="gap:8px;flex-wrap:nowrap"><input name="modem.own_number" class="mono" value="${esc(s['modem.own_number'] || '')}" placeholder="${esc(inf.own_number || '+7 900 000-00-00')}" autocomplete="off" style="flex:1">
           <button class="btn btn-primary" type="submit">Сохранить</button></div>
-          <span class="hint">${inf.own_number ? `Модем сообщает номер ${esc(inf.own_number)}; поле нужно, только если он неверный.` : 'Модем номер не знает (оператор не записал его в SIM) — укажите вручную.'} Агенты знают этот номер и называют его, если спросят.</span></div></form></div>
+          <span class="hint">${inf.own_number ? `Модем сообщает номер ${esc(inf.own_number)}; поле нужно, только если он неверный.` : 'Модем номер не знает (оператор не записал его в SIM) — укажите вручную.'} Агенты знают этот номер и называют его, если спросят. Тот же номер — в контакте «Этот номер».</span></div></form></div>
       </div>
       <div class="card mt ussd-card"><div class="card-head"><h2>USSD-запросы</h2><span class="muted small">баланс, остатки пакетов, подключение услуг</span></div>
         <form class="row ussd-form" id="ussd-form">

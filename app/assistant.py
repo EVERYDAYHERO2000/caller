@@ -210,7 +210,10 @@ def _contact_out(c: dict) -> dict:
     """The whole card of a contact, with the labels of the form — the comment and the contact's own fields too."""
     card = {"id": c["id"], "Имя": c.get("name") or "", "Фамилия": c.get("last_name") or "", "Телефон": c.get("phone"),
             "Кем приходится владельцу": c.get("relation") or "", "Компания": c.get("company") or "",
-            "E-mail": c.get("email") or "", "Теги": c.get("tags") or "", "Комментарий": c.get("notes") or ""}
+            "E-mail": c.get("email") or "", "Адрес": c.get("address") or "", "Теги": c.get("tags") or "",
+            "Комментарий": c.get("notes") or ""}
+    if c.get("is_self"):
+        card["Это"] = "вы сами — карточка «Этот номер» (номер SIM-карты Caller)"
     card.update({k: v for k, v in db.contact_fields(c)})
     return {k: v for k, v in card.items() if v not in ("", None) or k in ("id", "Имя", "Телефон")}
 
