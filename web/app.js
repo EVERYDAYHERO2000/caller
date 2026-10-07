@@ -479,10 +479,11 @@ document.addEventListener('click', (e) => {
   showCall(+card.dataset.id);
 });
 
-// Right click on a table row (or a call widget) = its "⋮" menu, opened at the mouse. Text fields, links, the
-// audio player and selected text keep the browser's own behaviour.
+// Right click on a table row or a widget (calls, the chat's contacts and tasks) = its "⋮" menu, opened at the
+// mouse. Text fields, links and selected text keep the browser's own behaviour.
 document.addEventListener('contextmenu', (e) => {
-  if (e.target.closest('input, textarea, select, a[href], .wplayer, .menu') || String(getSelection()).trim()) return;
+  // (the player of a call widget is part of the widget: a right click there opens the widget's menu too)
+  if (e.target.closest('input, textarea, select, a[href], .menu') || String(getSelection()).trim()) return;
   const row = e.target.closest('tr, .call-card, .asst-obj');
   const k = row && $('.kebab', row);
   if (!k || k.disabled) return;
@@ -2300,7 +2301,11 @@ async function contactHistory(m, c) {
     }).join('') || `<div class="empty small">${icon('message')}<div>С этим контактом ещё не общались. Когда будут звонки и SMS, здесь появится история — и ИИ сможет отвечать на вопросы по ней.</div></div>`;
     $$('.hist-call .call-card', feed).forEach((el) => {
       const k = $('.kebab', el), id = +el.dataset.id;
-      if (k) k.onclick = (e) => { e.stopPropagation(); openMenu(k, [{ label: 'Подробнее', icon: 'eye', run: () => showCall(id) }]); };
+      const call = items.find((it) => it.kind === 'call' && it.call.id === id)?.call;
+      if (k) k.onclick = (e) => { e.stopPropagation(); openMenu(k, [  // the same menu as a call widget elsewhere
+        { label: 'Открыть звонок', icon: 'eye', run: () => showCall(id) },
+        call?.recording ? { label: 'Скачать аудиофайл', icon: 'download', run: () => downloadRecording(call) } : null,
+      ]); };
     });
     feed.scrollTop = feed.scrollHeight;
   };
