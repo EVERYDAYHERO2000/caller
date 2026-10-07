@@ -350,7 +350,12 @@ function helpify(root) {
   $$('.field .hint', root).forEach((hint) => {
     if (hint.dataset.helped) return;
     const live = !!hint.id;
-    const text = () => hint.textContent.replace(/\s+/g, ' ').trim();
+    // the tooltip is built from the hint's pieces, each translated on its own: a hint with a link or a value inside
+    // («… Все скиллы →») is several text nodes, and the language engine translates text node by text node
+    const text = () => [...hint.childNodes].map((n) => {
+      const v = n.textContent.replace(/\s+/g, ' ').trim();
+      return v && window.I18N ? I18N.t(v) : v;
+    }).filter(Boolean).join(' ').replace(/\s+([.,;:!?])/g, '$1').trim();
     const field = hint.closest('.field');
     const label = field && [...field.children].find((el) => el.tagName === 'LABEL')
       || field?.querySelector('label');
@@ -3160,7 +3165,7 @@ VIEWS.settings = {
         <form class="form mt" id="simform"><div class="field"><label>Номер SIM-карты</label>
           <div class="row" style="gap:8px;flex-wrap:nowrap"><input name="modem.own_number" class="mono" value="${esc(s['modem.own_number'] || '')}" placeholder="${esc(inf.own_number || '+7 900 000-00-00')}" autocomplete="off" style="flex:1">
           <button class="btn btn-primary" type="submit">Сохранить</button></div>
-          <span class="hint">${inf.own_number ? `Модем сообщает номер ${esc(inf.own_number)}; поле нужно, только если он неверный.` : 'Модем номер не знает (оператор не записал его в SIM) — укажите вручную.'} Агенты знают этот номер и называют его, если спросят. Тот же номер — в контакте «Этот номер».</span></div></form></div>
+          <span class="hint">${inf.own_number ? `<span>Модем сообщает номер</span> <span class="mono">${esc(inf.own_number)}</span><span>; поле нужно, только если он неверный.</span>` : '<span>Модем номер не знает (оператор не записал его в SIM) — укажите вручную.</span>'} <span>Агенты знают этот номер и называют его, если спросят.</span> <span>Тот же номер — в контакте «Этот номер».</span></span></div></form></div>
       </div>
       <div class="card mt ussd-card"><div class="card-head"><h2>USSD-запросы</h2><span class="muted small">баланс, остатки пакетов, подключение услуг</span></div>
         <form class="row ussd-form" id="ussd-form">
