@@ -114,6 +114,15 @@ class Modem:
         ]
         if not init:
             cmds.append(f"AT+CNMP={int(s['modem.network_mode'])}")
+        else:
+            # after a modem reset the mode may be back to «automatic» (LTE, where calls of this SIM don't come in):
+            # the saved mode is set again — only if it differs, a change makes the modem re-register
+            try:
+                cur = P.parse_int_value(await self._try("AT+CNMP?"), "+CNMP")
+            except Exception:  # noqa: BLE001
+                cur = None
+            if cur is None or cur != int(s["modem.network_mode"]):
+                cmds.append(f"AT+CNMP={int(s['modem.network_mode'])}")
         if s.get("modem.apn"):
             cmds.append(f'AT+CGDCONT=1,"IP","{s["modem.apn"]}"')
         errors = []
