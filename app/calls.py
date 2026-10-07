@@ -362,6 +362,8 @@ class CallManager:
         elif agent_id is not None or script_id is not None:
             c.agent_id, c.script_id = self._resolve_agent(agent_id, script_id)
             db.update("calls", c.id, {"agent_id": c.agent_id, "script_id": c.script_id})
+        elif not c.routed:
+            self._route(c)  # «Ответить» before the script was chosen: the default one answers, not silence
         await self._answer(c)
 
     async def hangup(self, reason: str = "user"):
@@ -477,6 +479,13 @@ class CallManager:
         row = db.get("calls", c.id) if c else None
         hub.publish("call.state", {"active": self.active(), "call": row})
 
+    async def _route_hidden_later(self, c: ActiveCall, wait: float = 1.5):
+        await asyncio.sleep(wait)
+        if self.current is c and c.state == "ringing" and not c.routed:
+            self._route(c)
+            self._publish(c)
+            self._maybe_auto_answer(c)
+
     def _route(self, c: ActiveCall):
         c.agent_id, c.script_id, reason = self.route_inbound(c.number)
         c.routed = True
@@ -567,6 +576,9 @@ class CallManager:
                                               history=bool(db.setting("calls.inbound_history", True)))
                 db.update("calls", c.id, {"history": c.history})
                 log.info("incoming call %s", c.id)
+                # the number (+CLIP) comes right after the first RING; this modem may send RING only once, so a
+                # hidden number is routed by time, not by the second RING
+                c.tasks.append(asyncio.create_task(self._route_hidden_later(c)))
             if c.direction != "in" or c.state != "ringing":
                 return
             c.rings += 1

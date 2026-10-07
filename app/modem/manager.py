@@ -98,10 +98,29 @@ class Modem:
 
     async def _init_modem(self):
         s = db.get_settings()
-        for cmd in ("AT", "ATE0", "AT+CMEE=2", "AT+CLIP=1", "AT+CVHU=0", "AT+COPS=3,0",
+        await self.cmd("AT", check=True)
+        # right after a modem restart the port answers before the SIM is ready, and settings sent then are lost
+        # (the caller's number, +CLIP, stayed off) — wait for the SIM first
+        for _ in range(30):
+            if any("READY" in ln for ln in await self._try("AT+CPIN?")):
+                break
+            await asyncio.sleep(1)
+        for cmd in ("ATE0", "AT+CMEE=2", "AT+CLIP=1", "AT+CVHU=0", "AT+COPS=3,0",
                     "AT+CMGF=0", "AT+CNMI=2,1,0,0,0", "AT+CREG=0"):
-            await self.cmd(cmd, check=cmd in ("AT",))
+            await self.cmd(cmd, check=False)
+        await self.ensure_clip()
         await self.apply_settings(s, init=True)
+
+    async def ensure_clip(self):
+        """The caller's number (+CLIP) must be on: without it every incoming call is «скрытый номер»."""
+        for _ in range(3):
+            lines = await self._try("AT+CLIP?")
+            if any(ln.replace(" ", "").startswith("+CLIP:1") for ln in lines):
+                return True
+            log.warning("caller ID (+CLIP) is off — turning it on")
+            await self._try("AT+CLIP=1")
+            await asyncio.sleep(1)
+        return False
 
     async def apply_settings(self, s: dict | None = None, init: bool = False):
         """Push modem-related settings to the device."""
@@ -227,6 +246,9 @@ class Modem:
                     continue
                 if self._ussd is None:  # a USSD answer may arrive as a late +CME ERROR — don't let a poll take it
                     await self.refresh_status()
+                    self._polls = getattr(self, "_polls", 0) + 1
+                    if self._polls % 6 == 0:  # about once a minute: the modem may have lost the setting (a reset)
+                        await self.ensure_clip()
             except asyncio.CancelledError:
                 raise
             except Exception as e:
