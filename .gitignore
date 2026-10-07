@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+fish_demo/.env
+.DS_Store
+temp/
+fish_demo/out/
+.claude/

@@ -1,0 +1,24 @@
+[Unit]
+Description=Caller — voice agent telephony server (SIM7600 + Yandex AI Studio)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=caller
+Group=caller
+SupplementaryGroups=dialout
+WorkingDirectory=/opt/caller
+EnvironmentFile=-/etc/default/caller
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/caller/.venv/bin/python -m app
+Restart=always
+RestartSec=3
+# audio is paced in real time — give the service priority over everything else on the Pi
+Nice=-10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=0
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

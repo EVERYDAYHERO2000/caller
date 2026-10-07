@@ -1,0 +1,7 @@
+fastapi>=0.110
+uvicorn>=0.29
+websockets>=12
+aiohttp>=3.9
+pyserial>=3.5
+python-gsmmodem-new>=0.13
+msgpack>=1.0

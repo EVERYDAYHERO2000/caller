@@ -1,0 +1,74 @@
+[
+ {
+  "id": "mmm",
+  "text": "Ммм...",
+  "kind": "short",
+  "url": "/static/fillers/4b6d1ad3-97a4-4c60-bcae-c6a34537ad77/mmm.mp3"
+ },
+ {
+  "id": "tak",
+  "text": "Так...",
+  "kind": "short",
+  "url": "/static/fillers/4b6d1ad3-97a4-4c60-bcae-c6a34537ad77/tak.mp3"
+ },
+ {
+  "id": "ugu",
+  "text": "Угу.",
+  "kind": "short",
+  "url": "/static/fillers/4b6d1ad3-97a4-4c60-bcae-c6a34537ad77/ugu.mp3"
+ },
+ {
+  "id": "nu",
+  "text": "Ну...",
+  "kind": "short",
+  "url": "/static/fillers/4b6d1ad3-97a4-4c60-bcae-c6a34537ad77/nu.mp3"
+ },
+ {
+  "id": "hm",
+  "text": "Хм...",
+  "kind": "short",
+  "url": "/static/fillers/4b6d1ad3-97a4-4c60-bcae-c6a34537ad77/hm.mp3"
+ },
+ {
+  "id": "eee",
+  "text": "Эээ...",
+  "kind": "short",
+  "url": "/static/fillers/4b6d1ad3-97a4-4c60-bcae-c6a34537ad77/eee.mp3"
+ },
+ {
+  "id": "taktak",
+  "text": "Так-так...",
+  "kind": "short",
+  "url": "/static/fillers/4b6d1ad3-97a4-4c60-bcae-c6a34537ad77/taktak.mp3"
+ },
+ {
+  "id": "sekundochku",
+  "text": "Секундочку...",
+  "kind": "long",
+  "url": "/static/fillers/4b6d1ad3-97a4-4c60-bcae-c6a34537ad77/sekundochku.mp3"
+ },
+ {
+  "id": "posmotryu",
+  "text": "Сейчас посмотрю.",
+  "kind": "long",
+  "url": "/static/fillers/4b6d1ad3-97a4-4c60-bcae-c6a34537ad77/posmotryu.mp3"
+ },
+ {
+  "id": "podumat",
+  "text": "Так, дайте подумать...",
+  "kind": "long",
+  "url": "/static/fillers/4b6d1ad3-97a4-4c60-bcae-c6a34537ad77/podumat.mp3"
+ },
+ {
+  "id": "minutku",
+  "text": "Минутку, уточняю.",
+  "kind": "long",
+  "url": "/static/fillers/4b6d1ad3-97a4-4c60-bcae-c6a34537ad77/minutku.mp3"
+ },
+ {
+  "id": "odnu_sek",
+  "text": "Сейчас, одну секунду.",
+  "kind": "long",
+  "url": "/static/fillers/4b6d1ad3-97a4-4c60-bcae-c6a34537ad77/odnu_sek.mp3"
+ }
+]

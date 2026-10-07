@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Root helper for the Caller service (power saving on the Raspberry Pi). Only these actions are allowed:
+#   caller-sys wifi-powersave on|off     — Wi-Fi power saving (saved in the NetworkManager connection)
+#   caller-sys governor <name>           — CPU frequency governor (until reboot; the service re-applies it)
+# Installed by deploy/install.sh together with /etc/sudoers.d/caller (NOPASSWD for this file only).
+set -euo pipefail
+
+case "${1:-}" in
+  wifi-powersave)
+    case "${2:-}" in
+      on) ps=3; iwps=on ;;
+      off) ps=2; iwps=off ;;
+      *) echo "usage: caller-sys wifi-powersave on|off" >&2; exit 2 ;;
+    esac
+    con="$(nmcli -t -f NAME,TYPE con show --active | awk -F: '$2=="802-11-wireless" || $2=="wifi" {print $1; exit}')"
+    if [ -n "$con" ]; then nmcli con modify "$con" 802-11-wireless.powersave "$ps"; fi
+    /usr/sbin/iw dev wlan0 set power_save "$iwps"
+    ;;
+  governor)
+    gov="${2:-}"
+    avail="$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors)"
+    [[ " $avail " == *" $gov "* ]] || { echo "unknown governor: $gov (available: $avail)" >&2; exit 2; }
+    for f in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do echo "$gov" > "$f"; done
+    ;;
+  *)
+    echo "usage: caller-sys wifi-powersave on|off | governor <name>" >&2; exit 2 ;;
+esac

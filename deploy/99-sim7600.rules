@@ -1,0 +1,8 @@
+# Stable names for SIMCom SIM7600 USB interfaces (VID 1e0e, PID 9001 / 9011):
+#   /dev/sim7600-at    -> AT command port   (interface 02, usually /dev/ttyUSB2)
+#   /dev/sim7600-audio -> PCM voice port    (interface 04, usually /dev/ttyUSB4)
+# Use these paths in Settings → Modem if ttyUSB numbering is unstable.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1e0e", ATTRS{idProduct}=="9001|9011", ENV{ID_USB_INTERFACE_NUM}=="02", SYMLINK+="sim7600-at", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1e0e", ATTRS{idProduct}=="9001|9011", ENV{ID_USB_INTERFACE_NUM}=="04", SYMLINK+="sim7600-audio", GROUP="dialout", MODE="0660"
+# Keep ModemManager away from the modem if it is installed
+ATTRS{idVendor}=="1e0e", ENV{ID_MM_DEVICE_IGNORE}="1"

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fish Audio — стриминг голоса</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>Fish Audio · демо стриминга голоса</h1>
+  <div class="badges">
+    <span id="session-badge" class="badge off" title="Состояние WebSocket-сессии с realtime.fishaudio.org">сессия: нет</span>
+    <span id="quota-badge" class="badge" title="Остаток API-квоты (кредиты)">квота: …</span>
+  </div>
+</header>
+
+<main>
+  <section class="card controls">
+    <div class="row">
+      <label class="grow">Голос
+        <div class="voice-pick">
+          <input id="voice-search" type="search" placeholder="поиск голоса…">
+          <select id="voice"></select>
+        </div>
+      </label>
+      <label>Задержка
+        <select id="latency">
+          <option value="balanced" selected>balanced (быстрее)</option>
+          <option value="normal">normal</option>
+        </select>
+      </label>
+      <label>Модель для HTTP
+        <select id="http-model">
+          <option value="fishaudio-s21pro-flash" selected>S2.1 Pro Flash</option>
+          <option value="fishaudio-s21pro">S2.1 Pro</option>
+        </select>
+      </label>
+    </div>
+
+    <label>Текст
+      <textarea id="text" rows="3"></textarea>
+    </label>
+    <div class="presets" id="presets"></div>
+
+    <div class="row small">
+      <label class="inline"><input type="checkbox" id="warm" checked> держать соединение прогретым (как в звонке)</label>
+      <label class="inline"><input type="checkbox" id="early-flush" checked> LLM: первый сегмент — до запятой</label>
+      <label class="inline">LLM: <input type="range" id="wps" min="3" max="20" value="8"> <span id="wps-val">8</span> слов/с</label>
+      <label class="inline">LLM: первый токен через <input type="number" id="ttft" value="600" min="0" max="5000" step="100"> мс</label>
+    </div>
+
+    <div class="fillers">
+      <div class="row small">
+        <label class="inline"><input type="checkbox" id="fill-on" checked> <b>маскировать паузу заготовкой</b></label>
+        <label class="inline">если тишина дольше <input type="number" id="fill-delay" value="400" min="0" max="3000" step="50"> мс</label>
+        <label class="inline">вид
+          <select id="fill-kind">
+            <option value="any">случайно</option>
+            <option value="short" selected>короткие</option>
+            <option value="long">длинные</option>
+          </select>
+        </label>
+        <button id="btn-fill-gen" class="ghost">Сгенерировать для голоса</button>
+        <span id="fill-status" class="muted"></span>
+      </div>
+      <div class="presets" id="filler-list"></div>
+    </div>
+
+    <div class="row actions">
+      <button id="btn-whole" class="primary">▶ Стрим: весь текст сразу</button>
+      <button id="btn-llm" class="primary">▶ Стрим: как ответ LLM</button>
+      <button id="btn-http">HTTP целиком (сравнение)</button>
+      <button id="btn-stop" class="ghost">■ Стоп</button>
+      <span id="cost" class="muted"></span>
+    </div>
+  </section>
+
+  <section class="metrics">
+    <div class="metric hero"><div class="label">До первого звука</div><div class="value" id="m-first">—</div><div class="hint" id="m-first-hint">от конца реплики абонента (нажатия) до звука</div></div>
+    <div class="metric"><div class="label">До ответа</div><div class="value" id="m-answer">—</div><div class="hint" id="m-answer-hint">когда зазвучал сам ответ</div></div>
+    <div class="metric"><div class="label">Первый чанк (API)</div><div class="value" id="m-ttfa">—</div><div class="hint">от конца фразы до 1-го аудио на сервере</div></div>
+    <div class="metric"><div class="label">Подключение</div><div class="value" id="m-connect">—</div><div class="hint" id="m-connect-hint">WebSocket + auth + ready</div></div>
+    <div class="metric"><div class="label">Генерация</div><div class="value" id="m-gen">—</div><div class="hint">от отправки текста до последнего чанка</div></div>
+    <div class="metric"><div class="label">Длительность аудио</div><div class="value" id="m-dur">—</div><div class="hint" id="m-rtf">&nbsp;</div></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Таймлайн запуска</h2><span class="muted" id="tl-note"></span></div>
+    <div id="llm-text" class="llm-text"></div>
+    <svg id="timeline" height="150"></svg>
+    <audio id="player" controls></audio>
+  </section>
+
+  <section class="card">
+    <h2>История</h2>
+    <table id="history">
+      <thead><tr><th>#</th><th>режим</th><th>симв.</th><th>подкл.</th><th>до звука</th><th>заготовка</th><th>до ответа</th><th>1-й чанк API</th><th>генерация</th><th>аудио</th><th>кредиты</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <details class="card">
+    <summary>Лог событий</summary>
+    <pre id="log"></pre>
+  </details>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
