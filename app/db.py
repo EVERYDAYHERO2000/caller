@@ -69,6 +69,20 @@ CREATE TABLE IF NOT EXISTS voice_fillers (
 CREATE INDEX IF NOT EXISTS idx_voice_fillers_voice ON voice_fillers(voice_id);
 
 -- what the app spent at the providers (Настройки → карточки расхода): Yandex tokens, Fish Audio credits
+-- skills: what an agent can do in a call, loaded when the situation needs it (or right away). A script lists
+-- its skills; the agent sees «name — when to use» and calls use_skill to get the instructions.
+CREATE TABLE IF NOT EXISTS skills (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL,
+    trigger      TEXT DEFAULT '',          -- when to use it: «звонит курьер или служба доставки»
+    instructions TEXT DEFAULT '',          -- what to know and do
+    collect      TEXT DEFAULT '[]',        -- what to find out and save to the result: ["номер машины", …]
+    sms_to       TEXT DEFAULT '',          -- the skill may send an SMS summary to this number (notify_sms)
+    always       INTEGER DEFAULT 0,        -- loaded at the start of the call, not on demand
+    created_at   TEXT,
+    updated_at   TEXT
+);
+
 -- Telegram accounts linked to the bot (one-time code from «Настройки → Telegram»); each has its assistant chat
 CREATE TABLE IF NOT EXISTS telegram_users (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -290,12 +304,13 @@ CREATE TABLE IF NOT EXISTS sms_parts (
 
 JSON_COLUMNS = {
     "agents": {"tools", "extra"},
-    "scripts": {"variables", "inbound_numbers", "inbound_contacts", "call_tools"},
+    "scripts": {"variables", "inbound_numbers", "inbound_contacts", "call_tools", "skills"},
     "calls": {"variables", "result"},
     "contacts": {"fields"},
+    "skills": {"collect"},
     "tasks": {"event", "geo"},
 }
-BOOL_COLUMNS = {"agents": {"speaks_first", "fillers"}, "sms": {"is_read"}}
+BOOL_COLUMNS = {"agents": {"speaks_first", "fillers"}, "sms": {"is_read"}, "skills": {"always"}}
 
 # SpeechKit voices and their roles (emotion / delivery), usable in the Realtime API as
 # audio.output.voice + audio.output.role. https://aistudio.yandex.ru/docs/ru/speechkit/tts/voices
@@ -460,6 +475,9 @@ def _migrate():
     if "ambience" not in cols:
         # background sound under the agent in the script's calls: '' | sound id | 'random'
         _conn.execute("ALTER TABLE scripts ADD COLUMN ambience TEXT DEFAULT ''")
+    if "skills" not in cols:
+        # the script's skills: ids from «Скиллы»
+        _conn.execute("ALTER TABLE scripts ADD COLUMN skills TEXT DEFAULT '[]'")
     if "inbound_contacts" not in cols:
         _conn.execute("ALTER TABLE scripts ADD COLUMN inbound_contacts TEXT DEFAULT '[]'")
     cols_a = {r[1] for r in _conn.execute("PRAGMA table_info(agents)")}

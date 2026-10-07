@@ -30,7 +30,7 @@ GREETING_TAG = "greeting"  # Fish phrase tag of the greeting synthesized before 
 # and the form keeps changing: «[TOOL_CALL_START]save_result {…}», a ``` block, «save_result({…})»,
 # «{{save_result "status": …}}», JSON {"name": …}, or just a line «Завершить звонок». Everything from such a
 # start on is not speech: it's cut from what is spoken and saved (_visible) and executed as a call (leaked_calls).
-CALL_NAMES = ("hangup_call", "save_result", "send_dtmf")
+CALL_NAMES = ("hangup_call", "save_result", "send_dtmf", "use_skill", "notify_sms")
 _NAMES = "|".join(CALL_NAMES)
 # a line that only names an action in words — the model "calling" a function in Russian
 CALL_WORDS = {"hangup_call": r"(?:завершить|заверши|завершаю|положить трубку|кладу трубку)(?:\s+(?:звонок|разговор|вызов))?",
@@ -145,6 +145,18 @@ TOOL_DEFS = {
             "required": ["status", "summary"],
         },
     },
+    "notify_sms": {
+        "type": "function",
+        "name": "notify_sms",
+        "description": "Отправить владельцу короткую SMS-сводку по подключённому скиллу (например, номер машины "
+                       "курьера для пропуска).",
+        "parameters": {
+            "type": "object",
+            "properties": {"text": {"type": "string", "description": "Текст SMS, коротко"},
+                           "skill": {"type": "string", "description": "Название скилла"}},
+            "required": ["text"],
+        },
+    },
     "send_dtmf": {
         "type": "function",
         "name": "send_dtmf",
@@ -156,6 +168,13 @@ TOOL_DEFS = {
         },
     },
 }
+
+
+def use_skill_def(names: list[str]) -> dict:
+    return {"type": "function", "name": "use_skill",
+            "description": "Подключить скилл — получить инструкцию для ситуации в разговоре. Вызывай молча.",
+            "parameters": {"type": "object", "properties": {
+                "name": {"type": "string", "enum": names, "description": "Название скилла"}}, "required": ["name"]}}
 
 
 def voice_role(voice: str, role: str | None) -> str:
@@ -184,6 +203,10 @@ class AgentSession:
         self.direction = direction
         self.agent = agent
         self.instructions = instructions
+        # skills: offered ones (loaded with use_skill during the call) and loaded ones (from the start or later)
+        self.skills = list(agent.get("skills") or [])
+        self.skills_loaded = list(agent.get("skills_loaded") or [])
+        self._skills_added: list[dict] = []  # loaded during the call — their text goes into the session
         self.s = settings
         self.rate = int(settings.get("audio.agent_rate") or 16000)
         self.rx_gain = float(settings.get("audio.rx_gain") or 1.0)
@@ -275,8 +298,17 @@ class AgentSession:
     def _session_config(self) -> dict:
         a = self.agent
         tools = [TOOL_DEFS[t] for t in (a.get("tools") or []) if t in TOOL_DEFS]
+        left = [sk["name"] for sk in self.skills if sk not in self._skills_added]
+        if left:
+            tools.append(use_skill_def(left))
+        if any(sk.get("sms_to") for sk in self.skills_loaded + self._skills_added):
+            tools.append(TOOL_DEFS["notify_sms"])
+        instructions = self.instructions
+        if self._skills_added:
+            from ..calls import skill_text
+            instructions += "\n\nПодключённые скиллы:\n\n" + "\n\n".join(skill_text(sk) for sk in self._skills_added)
         session = {
-            "instructions": self.instructions,
+            "instructions": instructions,
             "output_modalities": ["audio"],
             "audio": {
                 "input": {
@@ -983,7 +1015,8 @@ class AgentSession:
             if self._repeat_pending and not self._resp_called:  # after a switch from Fish to the Yandex voice
                 await self._repeat_unheard()
             if not getattr(self, "_resp_called", False):
-                allowed = set(self.agent.get("tools") or [])
+                allowed = set(self.agent.get("tools") or []) | ({"use_skill"} if self.skills else set()) \
+                    | ({"notify_sms"} if any(x.get("sms_to") for x in self.skills + self.skills_loaded) else set())
                 for name, args in leaked_calls(self._agent_text):
                     if name not in allowed:  # the script doesn't allow it (e.g. hangup) — the text is dropped anyway
                         log.warning("function call leaked into the reply text, not allowed in this call: %s", name)
@@ -1024,6 +1057,10 @@ class AgentSession:
                 await self.ctl.send_dtmf(str(args.get("digits", "")))
             except Exception as e:
                 output = {"ok": False, "error": str(e)}
+        elif name == "use_skill":
+            output = await self._use_skill(str(args.get("name") or args.get("skill") or ""))
+        elif name == "notify_sms":
+            output = await self._notify_sms(str(args.get("text") or ""), str(args.get("skill") or ""))
         else:
             output = {"ok": False, "error": f"unknown function {name}"}
         if not call_id:  # a call leaked into the text: nothing to answer on the Realtime side
@@ -1033,6 +1070,37 @@ class AgentSession:
             "output": json.dumps(output, ensure_ascii=False)}})
         if follow_up:
             await self._send({"type": "response.create"})
+
+    async def _use_skill(self, name: str) -> dict:
+        """Load a skill mid-call: its instructions (and functions) join the session; the model also gets them in
+        the function's answer, so it can follow them in its very next phrase."""
+        from ..calls import skill_text
+        key = name.strip().lower()
+        sk = next((x for x in self.skills if x["name"].strip().lower() == key), None) \
+            or next((x for x in self.skills if key and key in x["name"].lower()), None)
+        if not sk:
+            return {"ok": False, "error": f"нет скилла «{name}»", "available": [x["name"] for x in self.skills]}
+        if sk in self._skills_added:
+            return {"ok": True, "already": True, "instructions": skill_text(sk)}
+        self._skills_added.append(sk)
+        log.info("skill loaded: %s", sk["name"])
+        self.ctl.skill_loaded(sk["name"])
+        try:
+            await self._send(self._session_config())  # the instructions and the functions of the skill
+        except Exception as e:  # noqa: BLE001 — the answer below still carries the instructions
+            log.warning("session.update with the skill failed: %s", e)
+        return {"ok": True, "skill": sk["name"], "instructions": skill_text(sk)}
+
+    async def _notify_sms(self, text: str, skill: str) -> dict:
+        loaded = [x for x in self.skills_loaded + self._skills_added if x.get("sms_to")]
+        sk = next((x for x in loaded if skill and x["name"].lower() == skill.strip().lower()), None) or (loaded[0] if loaded else None)
+        if not sk or not text.strip():
+            return {"ok": False, "error": "нет подключённого скилла с SMS или пустой текст"}
+        try:
+            await self.ctl.skill_sms(sk["sms_to"], text.strip()[:600], sk["name"])
+            return {"ok": True, "sent_to": "владельцу"}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": str(e)}
 
     async def _hangup_after_speech(self, reason: str):
         # let the agent finish the goodbye phrase before hanging up
@@ -1072,6 +1140,7 @@ async def synthesize_sample(settings: dict, voice: str, text: str, model: str = 
     probe.s, probe.agent = settings, agent
     probe.fish_mode = False  # the sample is always the Yandex voice
     probe._greet_note = ""   # (fields _session_config reads; __init__ isn't run for the probe)
+    probe.skills, probe.skills_loaded, probe._skills_added = [], [], []
     probe.rate = int(settings.get("audio.agent_rate") or 16000)
     probe.instructions = ("Ты диктор. Произнеси дословно текст из кавычек, естественно и с живой интонацией, "
                           f"без приветствий и комментариев: «{text}»")

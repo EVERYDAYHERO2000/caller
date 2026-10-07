@@ -337,6 +337,7 @@ class ScriptIn(BaseModel):
     inbound_numbers: list[str] | None = Field(
         None, description="Номера звонящих, которые обрабатывает сценарий (входящие): "
                           "'+79161234567' или префикс '+7926*'")
+    skills: list[int] | None = Field(None, description="Скиллы сценария (id из /skills): агент подключает их по ситуации")
 
 
 def _one_catch_all(data: dict, script_id: int | None = None):
@@ -400,6 +401,59 @@ def _render(script: dict, body: RenderIn) -> dict:
                                                                      emotions.parse(agent.get("emotions_forbidden")))
                            if agent and (db.agent_voice(agent).get("tts_engine") == "fish") else ""),
     }
+
+
+# ---------------------------------------------------------------- skills
+
+class SkillIn(BaseModel):
+    name: str | None = Field(None, description="Название: «Курьер»")
+    trigger: str | None = Field(None, description="Когда применять: «звонит курьер или служба доставки»")
+    instructions: str | None = Field(None, description="Что знать и делать: адрес, ориентиры, код домофона…")
+    collect: list[str] | None = Field(None, description="Что узнать и сохранить в итог: «номер машины», «время приезда»")
+    sms_to: str | None = Field(None, description="Номер, на который скилл может отправить SMS со сводкой")
+    always: bool | None = Field(None, description="Подключать сразу, в начале звонка")
+
+
+@router.get("/skills", tags=["skills"])
+def list_skills():
+    """Скиллы: что агент умеет в звонке. Сценарий выбирает свои."""
+    rows = db.fetch_all("skills", "SELECT * FROM skills ORDER BY name")
+    used: dict[int, list[str]] = {}
+    for sc in db.fetch_all("scripts", "SELECT id, name, skills FROM scripts"):
+        for sid in sc.get("skills") or []:
+            used.setdefault(sid, []).append(sc["name"])
+    for r in rows:
+        r["scripts"] = used.get(r["id"], [])
+    return rows
+
+
+@router.post("/skills", tags=["skills"], status_code=201)
+def create_skill(body: SkillIn):
+    data = body.model_dump(exclude_none=True)
+    if not (data.get("name") or "").strip():
+        raise HTTPException(422, "укажите название скилла")
+    if data.get("sms_to"):
+        data["sms_to"] = db.normalize_phone(data["sms_to"])
+    ts = db.now()
+    return db.insert("skills", {**data, "created_at": ts, "updated_at": ts})
+
+
+@router.put("/skills/{skill_id}", tags=["skills"])
+def update_skill(skill_id: int, body: SkillIn):
+    _or_404(db.get("skills", skill_id))
+    data = body.model_dump(exclude_unset=True)
+    if data.get("sms_to"):
+        data["sms_to"] = db.normalize_phone(data["sms_to"])
+    return db.update("skills", skill_id, {**data, "updated_at": db.now()})
+
+
+@router.delete("/skills/{skill_id}", tags=["skills"])
+def delete_skill(skill_id: int):
+    """Удалить скилл (из сценариев он тоже уходит)."""
+    for sc in db.fetch_all("scripts", "SELECT id, skills FROM scripts"):
+        if skill_id in (sc.get("skills") or []):
+            db.update("scripts", sc["id"], {"skills": [x for x in sc["skills"] if x != skill_id]})
+    return {"deleted": db.delete("skills", skill_id)}
 
 
 @router.get("/scripts", tags=["scripts"])

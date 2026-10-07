@@ -2387,6 +2387,70 @@ VIEWS.scripts = {
   },
 };
 
+// ------------------------------------------------------------------ skills
+// What an agent can do in a call: knowledge and actions for a situation («Курьер», «Запись на приём»). A script
+// lists its skills; in the call the agent sees «name — when to use» and loads the skill when it's needed.
+VIEWS.skills = {
+  title: 'Скиллы', icon: 'sparkle',
+  hint: 'Скилл — что агент умеет: знание и действия под ситуацию. Сценарий выбирает свои скиллы, агент подключает нужный по ходу разговора — например, «Курьер», когда понимает, что звонит курьер.',
+  async render(root) {
+    setActions(`<button class="btn btn-primary" id="add">${icon('plus')} Скилл</button>`);
+    root.innerHTML = `<div class="card"><div class="card-head"><input id="q" type="search" placeholder="Поиск" style="max-width:360px"></div>
+      <div class="table-wrap"><table><thead><tr><th>Название</th><th>Когда применять</th><th>Сохраняет в итог</th><th>Сценарии</th><th></th></tr></thead>
+        <tbody id="rows"></tbody></table></div></div>`;
+    $('#add').onclick = () => editSkill({ collect: [] }, () => this.render(root));
+    $('#q', root).oninput = () => this.rows(root);
+    this.items = await api('/skills');
+    this.rows(root);
+  },
+  rows(root) {
+    const q = $('#q', root).value.trim().toLowerCase();
+    const list = this.items.filter((x) => !q || [x.name, x.trigger, x.instructions].some((v) => (v || '').toLowerCase().includes(q)));
+    $('#rows', root).innerHTML = list.map((x) => `<tr class="clickable" data-id="${x.id}">
+      <td style="max-width:240px">${entityCell(x.name, x.always ? 'подключается сразу' : '')}</td>
+      <td class="ellipsis" style="max-width:300px" title="${esc(x.trigger)}">${esc(x.trigger) || dash}</td>
+      <td>${(x.collect || []).map((c) => `<span class="chip">${esc(c)}</span>`).join(' ') || dash}${x.sms_to ? ` <span class="chip" title="Отправляет SMS-сводку на ${esc(x.sms_to)}">SMS</span>` : ''}</td>
+      <td class="ellipsis" style="max-width:220px" title="${esc((x.scripts || []).join(', '))}">${esc((x.scripts || []).join(', ')) || '<span class="muted small">ни в одном</span>'}</td>
+      <td class="kebab-cell">${KEBAB}</td></tr>`).join('')
+      || `<tr><td colspan="5" class="empty">${icon('sparkle')}<div>${q ? 'Ничего не найдено' : 'Скиллов пока нет. Создайте первый — например, «Курьер»: как объяснить дорогу и что спросить для пропуска.'}</div></td></tr>`;
+    const byId = (id) => this.items.find((x) => x.id === id);
+    bindRows(root, {
+      open: (id) => editSkill(byId(id), () => this.render(root)),
+      actions: (id) => ['-', { label: 'Удалить', icon: 'trash', danger: true, run: () => confirmBox(`Удалить скилл «${byId(id).name}»? Он пропадёт и из сценариев.`, async () => { await api('/skills/' + id, { method: 'DELETE' }); this.render(root); }) }],
+    });
+  },
+};
+
+function editSkill(x, done) {
+  modal({
+    title: x.id ? 'Скилл' : 'Новый скилл', size: 'lg',
+    body: `<form class="form" id="skf">
+      <div class="field"><label>Название *</label><input name="name" value="${esc(x.name)}" placeholder="Курьер" required></div>
+      <div class="field"><label>Когда применять</label><input name="trigger" value="${esc(x.trigger)}" placeholder="звонит курьер или служба доставки">
+        <span class="hint">По этой строке агент понимает, что пора подключить скилл. Пишите ситуацию, а не действие.</span></div>
+      <div class="field"><label>Инструкция</label><textarea name="instructions" class="code" rows="9" placeholder="Адрес: …, подъезд …, код домофона …&#10;Как подъехать: …&#10;Посылку можно оставить …&#10;Если нужен пропуск — спроси номер машины.">${esc(x.instructions)}</textarea>
+        <span class="hint">Что агент должен знать и делать в этой ситуации. Подгружается в разговор, только когда нужна.</span></div>
+      <div class="field"><label>Узнать и сохранить в итог звонка</label><input type="hidden" name="collect" value="${esc((x.collect || []).join(', '))}">
+        <span class="hint">Агент спросит это у собеседника и запишет в итог — например, «номер машины», «время приезда».</span></div>
+      <div class="field"><label>SMS-сводка на номер</label><input name="sms_to" value="${esc(x.sms_to)}" placeholder="+7 900 000-00-00 — необязательно">
+        <span class="hint">Когда агент всё узнает, он отправит на этот номер короткую сводку — например, охране номер машины для пропуска.</span></div>
+      <label class="switch"><input type="checkbox" name="always" ${x.always ? 'checked' : ''}> Подключать сразу, в начале звонка</label></form>`,
+    onMount: (m) => {
+      tagInput($('[name=collect]', m), { placeholder: 'Добавить поле…', create: (t) => `Добавить «${t}»`,
+        suggest: () => ['номер машины', 'время приезда', 'имя', 'компания', 'телефон для связи', 'адрес', 'причина звонка', 'удобное время'] });
+      $('[name=name]', m).focus();
+    },
+    buttons: [{ label: 'Отмена', cls: 'btn-ghost' }, { label: 'Сохранить', cls: 'btn-primary', onClick: async (m) => {
+      const f = formData($('#skf', m));
+      if (!f.name.trim()) throw new Error('Укажите название');
+      const body = { name: f.name.trim(), trigger: f.trigger.trim(), instructions: f.instructions, sms_to: f.sms_to.trim(), always: !!f.always,
+        collect: f.collect.split(',').map((t) => t.trim()).filter(Boolean) };
+      await api(x.id ? '/skills/' + x.id : '/skills', { method: x.id ? 'PUT' : 'POST', body });
+      toast('Скилл сохранён', 'ok'); done?.();
+    } }],
+  });
+}
+
 const SCRIPT_TOOLS = { hangup_call: 'Сам завершает звонок', save_result: 'Сохраняет итог разговора', send_dtmf: 'Голосовое меню (DTMF)' };
 // tabs inside a drawer: <div class="tabs drawer-tabs" data-tabs> buttons[data-tab] + sections.tab-pane[data-pane]
 function setupDrawerTabs(m, onShow) {
@@ -2405,13 +2469,18 @@ function setupDrawerTabs(m, onShow) {
   return show;
 }
 
-function editScript(s, done) {
+let skillsCache = null;  // for the script form's skills field
+async function editScript(s, done) {
+  skillsCache = await api('/skills').catch(() => []);
   const collect = (m) => {
     const body = formData($('#sf', m));
     const scope = body.direction === 'outbound' ? 'numbers' : body.inbound_scope;
     body.inbound_numbers = scope === 'numbers' && body.direction !== 'outbound' ? $$('#nums .chip-tag', m).map((c) => c.dataset.v) : [];
     body.inbound_contacts = scope === 'contacts' ? $$('#cts .chip-tag', m).map((c) => +c.dataset.id) : [];
     body.call_tools = $$('[data-calltool]', m).filter((i) => i.checked).map((i) => i.dataset.calltool);
+    const names = (body.skills_names || '').split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
+    body.skills = names.map((n) => (skillsCache || []).find((x) => x.name.trim().toLowerCase() === n)?.id).filter(Boolean);
+    delete body.skills_names;
     body.variables = $$('tr.var-row', m).map((r) => ({ name: $('[data-k=name]', r).value.trim(), label: $('[data-k=label]', r).value, default: $('[data-k=default]', r).value })).filter((v) => v.name);
     return body;
   };
@@ -2461,7 +2530,9 @@ function editScript(s, done) {
           <button type="button" class="btn btn-icon" id="sc-amb-play" title="Прослушать" aria-label="Прослушать">${icon('play')}</button></div></div>
         <div class="field"><label>Что агент может делать в этом звонке</label><div class="switch-list">
           ${Object.entries(SCRIPT_TOOLS).map(([k, l]) => `<label class="switch"><input type="checkbox" data-calltool="${k}" ${(s.call_tools || ['hangup_call', 'save_result']).includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}</div>
-          <span class="hint">Работает, только если функция включена и у агента. Лишние правила не попадут в промпт.</span></div>
+          <span class="hint">Базовые действия звонка. Особые действия (SMS, сбор данных) дают скиллы.</span></div>
+        <div class="field"><label>Скиллы</label><input type="hidden" name="skills_names" value="${esc((s.skills || []).map((id) => (skillsCache || []).find((x) => x.id === id)?.name).filter(Boolean).join(', '))}" data-skills>
+          <span class="hint">Что агент умеет в этом сценарии. Он подключит нужный скилл, когда поймёт ситуацию. <a href="#/skills">Все скиллы →</a></span></div>
       </section>
 
       <section class="tab-pane" data-pane="1" role="tabpanel" hidden>
@@ -2483,6 +2554,9 @@ function editScript(s, done) {
         <pre class="preview preview-full" id="preview">…</pre>
       </section></form>`,
     onMount: (m) => {
+      // ---- skills: chosen from «Скиллы» by name
+      tagInput($('[data-skills]', m), { placeholder: 'Добавить скилл…', create: (t) => `Нет скилла «${t}» — создайте в «Скиллы»`,
+        suggest: () => (skillsCache || []).map((x) => x.name) });
       // ---- background sound
       const ambSel = $('#sc-amb', m);
       bindAmbience(ambSel, $('#sc-amb-play', m));
@@ -2942,8 +3016,6 @@ function editAgent(a, catalog, done) {
             <span class="hint">Сколько молчания считать концом фразы собеседника. Больше — агент реже перебивает, но отвечает позже.</span></div>
           <div class="field"><label>Макс. длительность, сек</label><input type="number" name="max_duration_sec" value="${a.max_duration_sec ?? 600}" min="0">
             <span class="hint">Звонок завершится автоматически. 0 — без ограничения.</span></div></div>
-        <div class="field"><label>Функции агента</label><div class="switch-list">${Object.entries(TOOLS).map(([k, l]) => `<label class="switch"><input type="checkbox" data-tool="${k}" ${(a.tools || []).includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}</div>
-          <span class="hint">Что агент в принципе умеет. Сценарий может сузить набор для своих звонков.</span></div>
         <details><summary class="muted small" style="cursor:pointer">Дополнительно: модель и параметры session.update</summary>
           <div class="field mt"><label>Модель</label><input name="model" value="${esc(a.model)}" placeholder="из настроек"><span class="hint">например speech-realtime-250923</span></div>
           <div class="field mt"><label>Параметры session.update (JSON)</label><textarea id="extra" class="code" rows="5">${esc(JSON.stringify(a.extra || {}, null, 2))}</textarea>
@@ -2984,7 +3056,6 @@ function editAgent(a, catalog, done) {
       delete body.undefined;
       body.voice_id = +body.voice_id || null;
       if (!body.voice_id) { m.showTab(1); throw new Error('Выберите голос'); }
-      body.tools = $$('[data-tool]', m).filter((i) => i.checked).map((i) => i.dataset.tool);
       try { body.extra = JSON.parse($('#extra', m).value || '{}'); } catch { throw new Error('Некорректный JSON в доп. параметрах'); }
       const saved = await api(a.id ? '/agents/' + a.id : '/agents', { method: a.id ? 'PUT' : 'POST', body });
       toast(saved.fillers_status === 'generating' ? 'Агент сохранён · заготовки голоса генерируются в фоне (их видно в разделе «Голоса»)' : 'Агент сохранён', 'ok');
@@ -3523,7 +3594,7 @@ function renderCallBar() {
 
 // ------------------------------------------------------------------ shell: nav, router, websocket
 // '|' — разделитель групп в меню
-const ORDER = ['calls', 'sms', 'tasks', 'contacts', '|', 'scripts', 'agents', 'voices', '|', 'dashboard', 'system', 'providers', '|', 'settings'];
+const ORDER = ['calls', 'sms', 'tasks', 'contacts', '|', 'scripts', 'skills', 'agents', 'voices', '|', 'dashboard', 'system', 'providers', '|', 'settings'];
 function renderNav() {
   const cur = (location.hash.slice(2).split('?')[0]) || 'calls';
   $('#nav').innerHTML = ORDER.map((k) => k === '|' ? '<div class="nav-sep" role="separator"></div>' : `<a href="#/${k}" class="${cur === k ? 'active' : ''}">${icon(VIEWS[k].icon)}<span>${VIEWS[k].title}</span>${k === 'sms' && state.stats?.sms_unread ? `<span class="count" title="Непрочитанные SMS">${state.stats.sms_unread}</span>` : ''}${k === 'calls' && state.stats?.calls_new ? `<span class="count" title="Новые звонки">${state.stats.calls_new}</span>` : ''}${k === 'calls' && state.active ? `<span class="dot ok pulse" style="margin-left:${state.stats?.calls_new ? '8px' : 'auto'}"></span>` : ''}${k === 'dashboard' ? modemDot() : ''}</a>`).join('');

@@ -73,14 +73,32 @@ DEFAULT_SCRIPT_TOOLS = ["hangup_call", "save_result"]
 
 
 def effective_tools(agent: dict, script: dict | None) -> list[str]:
-    """Functions available in a call: what the agent can do AND what the script needs."""
-    agent_tools = [t for t in (agent.get("tools") or []) if t in CALL_TOOLS]
+    """Functions available in a call — the script decides («что нужно сделать»); the agent is only the voice and
+    the character. Without a script: the agent's old list (calls before scripts had their own)."""
     if not script:
-        return agent_tools
+        return [t for t in (agent.get("tools") or DEFAULT_SCRIPT_TOOLS) if t in CALL_TOOLS]
     wanted = script.get("call_tools")
-    if wanted is None:
-        wanted = DEFAULT_SCRIPT_TOOLS
-    return [t for t in agent_tools if t in wanted]
+    return [t for t in (DEFAULT_SCRIPT_TOOLS if wanted is None else wanted) if t in CALL_TOOLS]
+
+
+def script_skills(script: dict | None) -> tuple[list[dict], list[dict]]:
+    """The script's skills: (loaded from the start, loaded on demand)."""
+    ids = [i for i in (script or {}).get("skills") or [] if isinstance(i, int)]
+    rows = [db.get("skills", i) for i in ids]
+    rows = [x for x in rows if x and (x.get("name") or "").strip()]
+    return [x for x in rows if x.get("always")], [x for x in rows if not x.get("always")]
+
+
+def skill_text(skill: dict) -> str:
+    """What the agent gets when a skill is loaded."""
+    parts = [f"Скилл «{skill['name']}»" + (f" (когда {skill['trigger'].strip().rstrip('.')})" if skill.get("trigger") else "")
+             + ":\n" + (skill.get("instructions") or "").strip()]
+    if skill.get("collect"):
+        parts.append("Узнай у собеседника и сохрани в итог (save_result, в поле data): " + ", ".join(skill["collect"]) + ".")
+    if skill.get("sms_to"):
+        parts.append("Когда всё нужное узнаешь, отправь короткую сводку функцией notify_sms (одним сообщением, "
+                     "без лишних слов) — её получит владелец.")
+    return "\n".join(p for p in parts if p.strip())
 
 
 def _persona_name(agent: dict) -> str:
@@ -135,7 +153,8 @@ def first_phrase(agent: dict, script: dict | None, variables: dict) -> str:
 
 def build_instructions(agent: dict, script: dict | None, variables: dict, direction: str,
                        number: str, tools: list[str] | None = None, contact: dict | None = None,
-                       with_first: bool = True, history: str = "", prompt: str = "") -> str:
+                       with_first: bool = True, history: str = "", prompt: str = "",
+                       skills: tuple[list[dict], list[dict]] | None = None) -> str:
     """One coherent prompt: who the agent is (character) -> what to do in this call (script)
     -> how to behave on the phone (only the functions this call really has).
 
@@ -178,6 +197,17 @@ def build_instructions(agent: dict, script: dict | None, variables: dict, direct
                      + "\nУчитывай прошлые договорённости и то, о чём уже говорили: не спрашивай заново то, что уже "
                        "известно, продолжай с того места. Не пересказывай историю без нужды и не говори, что у тебя "
                        "есть записи или расшифровки разговоров — веди себя как человек, который помнит прошлые звонки.")
+
+    # 2b. skills: loaded ones in full, the rest as «name — when» to load with use_skill
+    always, on_demand = skills if skills is not None else script_skills(script)
+    for sk in always:
+        parts.append(skill_text(sk))
+    if on_demand:
+        parts.append("Скиллы, которые можно подключить по ходу разговора:\n"
+                     + "\n".join(f"- {sk['name']}: {(sk.get('trigger') or 'по ситуации').strip()}" for sk in on_demand)
+                     + "\nКак только поймёшь, что нужен скилл, молча вызови use_skill с его названием — получишь его "
+                       "инструкцию — и продолжай разговор по ней. Не говори собеседнику о скиллах и не объявляй, что "
+                       "что-то подключаешь.")
 
     # 3. phone manners + only the functions that exist in this call
     tools = effective_tools(agent, script) if tools is None else tools
@@ -351,6 +381,16 @@ class CallManager:
             return
         msg = db.insert("call_messages", {"call_id": c.id, "role": role, "text": text, "ts": db.now()})
         hub.publish("call.message", msg)
+
+    async def skill_sms(self, to: str, text: str, skill: str = ""):
+        """A skill's SMS summary (notify_sms) to the number set in the skill."""
+        c = self.current
+        await modem.send_sms(to, text)
+        self.add_message("system", f"SMS от скилла «{skill}» на {to}: {text}")
+        log.info("call %s: skill %s sent an SMS to %s", c.id if c else "-", skill, to)
+
+    def skill_loaded(self, name: str):
+        self.add_message("system", f"⚙ Подключён скилл «{name}»")
 
     def save_result(self, data: dict):
         c = self.current
@@ -581,11 +621,15 @@ class CallManager:
                      **c.variables}
         tools = effective_tools(agent, script)
         past = history_chat.past_calls_brief(c.number, exclude_call_id=c.id) if c.history and c.number else ""
+        always, on_demand = script_skills(script)
+        if any(sk.get("collect") for sk in always + on_demand) and "save_result" not in tools:
+            tools = tools + ["save_result"]  # a skill that collects data saves it to the result
         instructions = build_instructions(agent, script, variables, c.direction, c.number, tools, contact, prompt=c.prompt,
-                                          with_first=False, history=past)
+                                          with_first=False, history=past, skills=(always, on_demand))
         greeting = first_phrase(agent, script, variables)
-        # the model only gets the functions this call needs; the voice comes from Голоса
-        return {**agent, **db.agent_voice(agent), "tools": tools}, instructions, greeting
+        # the model only gets the functions this call needs; the voice comes from Голоса; skills load on demand
+        return ({**agent, **db.agent_voice(agent), "tools": tools, "skills": on_demand,
+                 "skills_loaded": always}, instructions, greeting)
 
     def _new_session(self, c: ActiveCall, s: dict) -> AgentSession | None:
         ctx = self._agent_context(c)
