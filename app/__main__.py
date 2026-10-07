@@ -50,7 +50,9 @@ def ensure_certificate() -> bool:
 
 
 async def main():
-    common = dict(app="app.main:app", host=config.HOST, log_level=config.LOG_LEVEL.lower())
+    # open browser tabs keep WebSockets (/api/events) — on stop they are closed after 3 s instead of waiting for
+    # them forever (systemd killed the service after 90 s, and calls couldn't come in meanwhile)
+    common = dict(app="app.main:app", host=config.HOST, log_level=config.LOG_LEVEL.lower(), timeout_graceful_shutdown=3)
     servers = [_Server(uvicorn.Config(port=config.PORT, lifespan="on", **common))]
     if config.SSL_PORT and ensure_certificate():
         servers.append(_Server(uvicorn.Config(
