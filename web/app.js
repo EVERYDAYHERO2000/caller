@@ -2474,9 +2474,10 @@ VIEWS.scripts = {
   hint: 'Сценарий — задача поверх агента: что он делает в звонке. Переменные {{имя}} подставляются при звонке, входящие распределяются по номерам звонящих.',
   async render(root) {
     await loadRefs();
+    skillsCache = await api('/skills').catch(() => skillsCache || []);  // names for the «Скиллы» column
     root.innerHTML = `<div class="card"><div class="card-head">
         <input id="q" type="search" placeholder="Поиск" style="max-width:360px"></div>
-      <div class="table-wrap"><table><thead><tr><th class="dir-cell"></th><th>Название</th><th>Агент</th><th>Переменные</th><th>Кто звонит</th><th></th></tr></thead>
+      <div class="table-wrap"><table><thead><tr><th class="dir-cell"></th><th>Название</th><th>Агент</th><th>Скиллы</th><th>Переменные</th><th>Кто звонит</th><th></th></tr></thead>
         <tbody id="rows"></tbody></table></div></div>`;
     setActions(`<button class="btn btn-primary" id="add">${icon('plus')} Сценарий</button>`);
     $('#add').onclick = () => editScript({ direction: 'outbound', variables: [] }, () => this.render(root));
@@ -2495,6 +2496,7 @@ VIEWS.scripts = {
       <td class="dir-cell"><span class="dir-ic ${s.direction}" title="${esc(DIRS[s.direction] || s.direction)}">${icon(s.direction === 'inbound' ? 'phoneIn' : s.direction === 'outbound' ? 'phoneOut' : 'phone')}</span></td>
       <td style="max-width:300px">${entityCell(s.name, s.description || s.prompt || '')}</td>
       <td>${esc(agentName(s.default_agent_id) || 'по умолчанию')}</td>
+      <td>${(s.skills || []).map((id) => (skillsCache || []).find((x) => x.id === id)).filter(Boolean).map((k) => `<span class="chip">${esc(k.name)}</span>`).join(' ') || dash}</td>
       <td class="ellipsis" style="max-width:200px" title="${esc((s.variables || []).map((v) => v.name).join(', '))}">${esc((s.variables || []).map((v) => v.name).join(', ')) || dash}</td>
       <td>${s.direction === 'outbound' ? dash
         : s.inbound_scope === 'all' ? 'все входящие'
@@ -2503,7 +2505,7 @@ VIEWS.scripts = {
           ? `<span title="${esc(s.inbound_numbers.join(', '))}">${s.inbound_numbers.slice(0, 2).map((n) => esc(n.endsWith('*') ? n : contactName(n) || n)).join(', ')}${s.inbound_numbers.length > 2 ? ` +${s.inbound_numbers.length - 2}` : ''}</span>`
           : '<span title="Сценарий работает для входящих, только если выбран по умолчанию в Настройки → Звонки">не заданы</span>'}</td>
       <td class="kebab-cell">${KEBAB}</td></tr>`).join('')
-      || `<tr><td colspan="6" class="empty">${icon('script')}<div>${q ? 'Ничего не найдено' : 'Сценариев пока нет'}</div></td></tr>`;
+      || `<tr><td colspan="7" class="empty">${icon('script')}<div>${q ? 'Ничего не найдено' : 'Сценариев пока нет'}</div></td></tr>`;
     const byId = (id) => state.scripts.find((s) => s.id === id);
     bindRows(root, {
       open: (id) => editScript(byId(id), () => this.render(root)),
