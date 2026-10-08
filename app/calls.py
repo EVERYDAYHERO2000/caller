@@ -72,6 +72,11 @@ CALL_TOOLS = ("hangup_call", "save_result", "send_dtmf")
 DEFAULT_SCRIPT_TOOLS = ["hangup_call", "save_result"]
 
 
+def script_history(script: dict | None) -> bool:
+    """Whether the agent of the script's calls knows the previous conversations with the number."""
+    return (script or {}).get("history", 1) not in (0, False, "0")
+
+
 def effective_tools(agent: dict, script: dict | None) -> list[str]:
     """Functions available in a call — the script decides («что нужно сделать»); the agent is only the voice and
     the character. Without a script: the agent's old list (calls before scripts had their own)."""
@@ -321,7 +326,7 @@ class CallManager:
 
     async def dial(self, number: str, agent_id=None, script_id=None, variables=None,
                    queue: bool = False, scheduled_at: str | None = None, no_agent: bool = False,
-                   browser: bool = False, history: bool = True, prompt: str = "") -> dict:
+                   browser: bool = False, history: bool | None = None, prompt: str = "") -> dict:
         number = db.normalize_phone(number)
         if not number:
             raise ValueError("пустой номер")
@@ -331,6 +336,8 @@ class CallManager:
             agent_id = script_id = None
         else:
             agent_id, script_id = self._resolve_agent(agent_id, script_id)
+        if history is None:  # as the script says
+            history = script_history(db.get("scripts", script_id) if script_id else None)
         contact = db.find_contact(number)
         variables = dict(variables or {})
         row = {
@@ -652,6 +659,9 @@ class CallManager:
                         if isinstance(v, dict) and v.get("name")},
                      **c.variables}
         tools = effective_tools(agent, script)
+        if c.direction == "in" and script and c.history != script_history(script):
+            c.history = script_history(script)  # incoming: the routed script decides
+            db.update("calls", c.id, {"history": c.history})
         past = history_chat.past_calls_brief(c.number, exclude_call_id=c.id) if c.history and c.number else ""
         always, on_demand = script_skills(script)
         if any(sk.get("collect") for sk in always + on_demand) and "save_result" not in tools:

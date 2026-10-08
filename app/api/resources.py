@@ -337,6 +337,8 @@ class ScriptIn(BaseModel):
     inbound_numbers: list[str] | None = Field(
         None, description="Номера звонящих, которые обрабатывает сценарий (входящие): "
                           "'+79161234567' или префикс '+7926*'")
+    history: bool | None = Field(None, description="Агент знает предыдущие разговоры (суть и договорённости "
+                                                   "прошлых звонков и SMS с этим номером)")
     skills: list[int] | None = Field(None, description="Скиллы сценария (id из /skills): агент подключает их по ситуации")
 
 

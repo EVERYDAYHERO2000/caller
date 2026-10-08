@@ -1375,7 +1375,7 @@ function openDialModal({ mode = 'agent', number = '', script = '', agent = '' } 
         ${outScripts.map((x) => `<option value="${x.id}" ${String(script) === String(x.id) ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}
         <option value="">— без сценария —</option></select></div>
       <div id="dial-vars" class="form"></div>
-      <label class="switch"><input type="checkbox" name="history" ${localStorage.getItem('caller.dial.history') === '0' ? '' : 'checked'}> Агент знает про предыдущие звонки
+      <label class="switch"><input type="checkbox" name="history" checked> Агент знает предыдущие разговоры
         <span class="help sm" tabindex="0" role="note" data-tip="Агент получит суть и договорённости последних звонков и SMS с этим номером — и продолжит разговор с того места, не спрашивая заново то, что уже известно.">?</span></label>
       <details id="dial-queue" ${SCHEDULING ? '' : 'hidden'}><summary class="muted small" style="cursor:pointer">Очередь и отложенный звонок</summary>
         <div class="form" style="margin-top:10px">
@@ -1413,6 +1413,7 @@ function openDialModal({ mode = 'agent', number = '', script = '', agent = '' } 
       agentSel.addEventListener('change', () => { agentPicked = true; });
       scriptSel.onchange = () => {
         const sc = state.scripts.find((x) => String(x.id) === scriptSel.value);
+        $('[name=history]', m).checked = !(sc && (sc.history === 0 || sc.history === false));  // as the script says
         if (sc?.default_agent_id && !agentPicked && state.agents.some((a) => a.id === sc.default_agent_id)) {
           agentSel.value = sc.default_agent_id;
         }
@@ -1436,7 +1437,6 @@ function openDialModal({ mode = 'agent', number = '', script = '', agent = '' } 
         queue: SCHEDULING && !!f.queue,
         scheduled_at: SCHEDULING && f.scheduled_at ? new Date(f.scheduled_at).toISOString() : null,
       };
-      if (!browser) localStorage.setItem('caller.dial.history', f.history ? '1' : '0');  // the form remembers the choice
       if (browser) await softphone.start();  // ask for the microphone before dialing
       let r;
       try { r = await api('/calls', { method: 'POST', body }); } catch (e) { if (browser) softphone.stop(); throw e; }
@@ -2493,6 +2493,7 @@ async function editScript(s, done) {
     const scope = body.direction === 'outbound' ? 'numbers' : body.inbound_scope;
     body.inbound_numbers = scope === 'numbers' && body.direction !== 'outbound' ? $$('#nums .chip-tag', m).map((c) => c.dataset.v) : [];
     body.inbound_contacts = scope === 'contacts' ? $$('#cts .chip-tag', m).map((c) => +c.dataset.id) : [];
+    body.history = $('[name=history]', m).checked;
     body.call_tools = $$('[data-calltool]', m).filter((i) => i.checked).map((i) => i.dataset.calltool);
     const names = (body.skills_names || '').split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
     body.skills = names.map((n) => (skillsCache || []).find((x) => x.name.trim().toLowerCase() === n)?.id).filter(Boolean);
@@ -2544,6 +2545,8 @@ async function editScript(s, done) {
           <span class="help sm" tabindex="0" role="note" data-tip="Тихий шум города под голосом агента — заполняет паузы, пока готовится ответ. Слышит только собеседник: распознавание речи его не получает. Есть в записи звонка. Работает во входящих и исходящих звонках сценария. Громкость — в «Настройки → Звонки».">?</span></label>
           <div class="row" style="gap:8px"><select name="ambience" id="sc-amb" style="flex:1">${ambienceOpts(ambienceCache || [], s.ambience)}</select>
           <button type="button" class="btn btn-icon" id="sc-amb-play" title="Прослушать" aria-label="Прослушать">${icon('play')}</button></div></div>
+        <label class="switch"><input type="checkbox" name="history" ${s.history === 0 || s.history === false ? '' : 'checked'}> Агент знает предыдущие разговоры
+          <span class="help sm" tabindex="0" role="note" data-tip="Агент получит суть и договорённости прошлых звонков и SMS с этим номером — и продолжит разговор с того места, не спрашивая заново то, что уже известно. Для исходящих это значение по умолчанию в форме звонка.">?</span></label>
         <div class="field"><label>Что агент может делать в этом звонке</label><div class="switch-list">
           ${Object.entries(SCRIPT_TOOLS).map(([k, l]) => `<label class="switch"><input type="checkbox" data-calltool="${k}" ${(s.call_tools || ['hangup_call', 'save_result']).includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}</div>
           <span class="hint">Базовые действия звонка. Особые действия (SMS, сбор данных) дают скиллы.</span></div>
@@ -3243,7 +3246,6 @@ VIEWS.settings = {
         ${this.field('calls.dial_timeout', 'Ожидание ответа, сек', { type: 'number', min: 10 })}
         ${this.field('calls.queue_enabled', 'Обрабатывать очередь звонков', { type: 'switch' })}
         ${this.field('calls.record', 'Записывать разговоры (WAV)', { type: 'switch' })}
-        ${this.field('calls.inbound_history', 'Входящие: агент знает про предыдущие звонки', { type: 'switch', hint: 'Агент получит суть и договорённости прошлых звонков и SMS с номером звонящего. Для исходящих это переключатель в форме звонка.' })}
         <h3 class="mt">Фоновый звук</h3>
         <p class="hint" style="margin:0">Тихий шум города под голосом агента — заполняет паузы, пока готовится ответ. Сам звук выбирается в сценарии.</p>
         <div class="field"><label>Громкость фона: <b id="amb-vol">${Math.round((s['ambience.volume'] ?? 0.3) * 100)}%</b></label>

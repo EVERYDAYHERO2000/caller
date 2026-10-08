@@ -477,6 +477,12 @@ def _migrate():
     if "ambience" not in cols:
         # background sound under the agent in the script's calls: '' | sound id | 'random'
         _conn.execute("ALTER TABLE scripts ADD COLUMN ambience TEXT DEFAULT ''")
+    if "history" not in cols:
+        # the agent knows the previous calls and SMS with the number (for incoming it was a global setting)
+        _conn.execute("ALTER TABLE scripts ADD COLUMN history INTEGER DEFAULT 1")
+        old = _conn.execute("SELECT value FROM settings WHERE key='calls.inbound_history'").fetchone()
+        if old and str(old[0]).strip().lower() in ("false", "0"):
+            _conn.execute("UPDATE scripts SET history=0 WHERE direction IN ('inbound','any')")
     if "skills" not in cols:
         # the script's skills: ids from «Скиллы»
         _conn.execute("ALTER TABLE scripts ADD COLUMN skills TEXT DEFAULT '[]'")

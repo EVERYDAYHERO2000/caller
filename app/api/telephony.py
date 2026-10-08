@@ -33,7 +33,8 @@ class DialIn(BaseModel):
     variables: dict[str, Any] = Field(default_factory=dict, description="Значения {{переменных}} сценария")
     queue: bool = Field(False, description="Поставить в очередь, если линия занята")
     scheduled_at: str | None = Field(None, description="ISO-время отложенного звонка (ставится в очередь)")
-    history: bool = Field(True, description="Агент знает про предыдущие звонки и SMS с этим номером")
+    history: bool | None = Field(None, description="Агент знает про предыдущие звонки и SMS с этим номером "
+                                                   "(не задано — как в сценарии)")
     prompt: str = Field("", description="Особое задание агенту на этот звонок (дополняет сценарий): "
                                         "«узнай, когда он свободен на этой неделе»")
 
