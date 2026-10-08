@@ -41,7 +41,9 @@ LEAK_START = re.compile(
     rf"|(?m:^[^\w\n]*(?:{_NAMES})\b)"            # a line starting with a function name, after {{ [ ` * etc.
     rf"|[{{\[<`(]\s*(?:{_NAMES})\b"               # …or right after an opening bracket anywhere
     r"|\{\s*\"name\"\s*:"
-    rf"|(?im:^[^\w\n]*(?:{_WORDS})[^\w\n]*$)")    # «Завершить звонок» alone on a line
+    rf"|(?im:^[^\w\n]*(?:{_WORDS})[^\w\n]*$)"    # «Завершить звонок» alone on a line
+    # a made-up continuation of the dialogue («Пользователь: … Ассистент: …») — never to be spoken
+    r"|(?im:^\s*(?:Пользователь|Собеседник|Ассистент|Ассисток|Агент|Курьер|Водитель|User|Assistant)\s*:)")
 _JSON = json.JSONDecoder()
 _PAIR = re.compile(r'"(\w+)"\s*:\s*("(?:[^"\\]|\\.)*"|\{.*?\}|-?\d+(?:\.\d+)?|true|false|null)', re.S)
 
