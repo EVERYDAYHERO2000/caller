@@ -549,9 +549,11 @@ select { appearance: none; -webkit-appearance: none; padding-right: 38px;  /* na
 .page-loader .spin { width: 28px; height: 28px; border-width: 3px; color: var(--primary); }
 #view { position: relative; }
 #view.view-loading > :not(.page-loader) { visibility: hidden; }
-#view.view-loading::after { content: ''; position: absolute; top: 120px; left: 50%; width: 28px; height: 28px; margin-left: -14px;
+/* centred in the screen's height: #view starts under the 60px topbar */
+#view.view-loading::after { content: ''; position: absolute; top: calc(50vh - 60px - 14px); left: 50%; width: 28px; height: 28px; margin-left: -14px;
   border-radius: 50%; border: 3px solid var(--primary); border-top-color: transparent; animation: select-spin .7s linear infinite; }
 #view.view-loading:has(> .page-loader)::after { display: none; }
+#view > .page-loader { min-height: calc(100vh - 128px); padding: 0; }  /* centre at 50vh: 64px above, 64px below */
 
 /* ---------------------------------------------------------------- confirm dialog (centred) */
 .dialog-backdrop { position: fixed; inset: 0; z-index: 1100; display: grid; place-items: center; padding: 16px;
