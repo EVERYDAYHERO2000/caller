@@ -633,13 +633,21 @@ body.has-notice .content:has(> .tasks-hub) { padding-bottom: 16px; }
 .call-feed { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 20px; }
 .call-card { border: 1px solid color-mix(in srgb, var(--border) 55%, transparent); border-radius: 12px; padding: 12px 14px; background: var(--card-2);
   display: flex; flex-direction: column; gap: 10px; flex: none; }
-.call-card .row { gap: 8px; flex-wrap: nowrap; }
+.call-card .row { gap: 8px; flex-wrap: nowrap; min-width: 0; }
+/* a narrow feed: the widget never gets wider than it — the head's text is cut with «…», extras go */
+.call-card { container-type: inline-size; overflow: hidden; min-width: 0; }
+.call-card > .row:first-child > .ellipsis { flex: 0 1 auto; min-width: 0; }
+.call-card > .row:first-child > .nowrap { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@container (max-width: 380px) { .call-card > .row:first-child > .nowrap { display: none; } }
+@container (max-width: 300px) { .call-card .wp-time { display: none; } }
+@container (max-width: 260px) { .call-card .call-dir, .call-card .badge.forgot { display: none; } }
 .call-card .badge { flex: none; }
 .person-name { font-weight: 400; color: var(--text); }
 .call-card.live { border-color: color-mix(in srgb, var(--primary) 60%, var(--border)); }
 .call-card audio { width: 100%; height: 36px; }
 .call-item { display: flex; flex-direction: column; gap: 6px; flex: none; }  /* the widget + its summary = one block */
-.call-summary { padding: 0 14px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; display: flex; flex-direction: column; gap: 4px; }
+/* the agent's text (a summary, an AI answer) reads as a column: at most 80% of the chat / feed and 650px */
+.call-summary { max-width: min(80%, 650px); padding: 0 14px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; display: flex; flex-direction: column; gap: 4px; }
 .call-summary .agreed { color: var(--muted); }
 .call-summary .agreed span { color: var(--text); font-weight: 500; }
 .call-card .transcript { max-height: 320px; }
@@ -681,7 +689,7 @@ body.has-notice .content:has(> .tasks-hub) { padding-bottom: 16px; }
   white-space: pre-wrap; line-height: 1.45; font-size: 14px; }
 .bubble.me { background: var(--primary-soft); border-color: transparent; margin: 24px 0; }
 /* the AI's answers read as plain text, like the summary under a call; your questions stay in bubbles */
-.bubble.ai { background: none; border: 0; padding: 0 14px; max-width: 100%; }
+.bubble.ai { background: none; border: 0; padding: 0 14px; max-width: min(80%, 650px); }
 .bubble.err { color: var(--err); }
 .bubble .meta { margin-top: 4px; font-size: 11.5px; color: var(--faint); white-space: nowrap; }
 .hist-compose { display: flex; gap: 8px; align-items: flex-end; border-top: 1px solid var(--border); padding: 12px 22px 14px;
@@ -735,7 +743,7 @@ th.dir-cell, td.dir-cell { width: 1%; padding-right: 0; }
   border: 1px solid var(--border); color: var(--text); pointer-events: none; white-space: nowrap; }
 .call-card .wplayer { padding: 0; border: 0; background: none; border-radius: 0; }  /* the widget is the card already */
 .call-card .wplayer:focus-visible { box-shadow: none; outline: 2px solid var(--primary); outline-offset: 4px; border-radius: 8px; }
-.wp-time { flex: none; font-size: 12px; color: var(--muted); min-width: 74px; text-align: right; }
+.wp-time { flex: none; font-size: 12px; color: var(--muted); width: 13ch; text-align: right; white-space: nowrap; }  /* room for «12:34 / 12:34» */
 
 /* ---- contact: its own key — value fields */
 .kv-fields { display: flex; flex-direction: column; gap: 8px; }

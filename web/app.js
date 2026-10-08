@@ -1082,7 +1082,7 @@ VIEWS.calls = {
       <div class="row"><span class="call-dir" title="${c.direction === 'in' ? 'Входящий' : 'Исходящий'}">${icon(c.direction === 'in' ? 'phoneIn' : 'phoneOut')}</span>
         ${((who) => `<span class="ellipsis" title="${esc(who)}">${esc(who)}</span>`)([c.agent_name ? `Агент ${c.agent_name}` : c.mode === 'browser' ? 'Через браузер' : 'Без агента', c.script_name].filter(Boolean).join(' · '))}
         <span class="small faint nowrap">${fmtDate(c.started_at || c.created_at)}</span>
-        ${statusBadge(c.status)}${c.forgotten ? `<span class="badge forgot" title="Не в истории агента: агенты не учитывают этот звонок" aria-label="Не в истории агента">${icon('eyeOff')}</span>` : ''}<span class="spacer"></span>
+        ${c.status === 'completed' ? '' : statusBadge(c.status)}${c.forgotten ? `<span class="badge forgot" title="Не в истории агента: агенты не учитывают этот звонок" aria-label="Не в истории агента">${icon('eyeOff')}</span>` : ''}<span class="spacer"></span>
         ${live ? '<span class="mono" data-timer></span>' : c.duration && !c.recording ? `<span class="small muted mono">${fmtDur(c.duration)}</span>` : ''}${KEBAB}</div>
       ${live ? '<div class="live-slot"></div>' : c.recording ? wavePlayer(`/api/calls/${c.id}/recording`, `/api/calls/${c.id}/waveform`, { labels: ['собеседник', c.mode === 'browser' ? 'вы' : 'агент'] }) : ''}</div>
       ${live ? '' : callGist(c)}</div>`;
@@ -1231,7 +1231,7 @@ function wavePlayer(src, wave, { labels = [] } = {}) {
   return `<div class="wplayer" data-src="${esc(src)}" data-wave="${esc(wave || '')}" data-labels="${esc(labels.join('|'))}" tabindex="0" role="group" aria-label="Плеер">
     <button type="button" class="wp-btn" title="Слушать" aria-label="Слушать">${icon('play')}</button>
     <div class="wp-wave"><canvas></canvas><span class="wp-tip mono" hidden></span></div>
-    <span class="wp-time mono">0:00</span></div>`;
+    <span class="wp-time mono"></span></div>`;
 }
 const wpFmt = (t) => { t = Math.max(0, Math.floor(t || 0)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
 let wpCurrent = null;  // only one player sounds at a time
@@ -1240,10 +1240,14 @@ function initWavePlayer(el) {
   el.dataset.ready = '1';
   const btn = $('.wp-btn', el), box = $('.wp-wave', el), cv = $('canvas', box), tip = $('.wp-tip', el), time = $('.wp-time', el);
   const labels = (el.dataset.labels || '').split('|').filter(Boolean);
-  let peaks = null, duration = 0, audio = null, hover = null, raf = 0, pendingSeek = null;
+  let peaks = null, duration = 0, audio = null, hover = null, raf = 0, pendingSeek = null, started = false;
 
   const cur = () => (audio ? audio.currentTime : pendingSeek || 0);
-  const showTime = () => { time.textContent = duration ? `${wpFmt(cur())} / ${wpFmt(duration)}` : wpFmt(cur()); };
+  // the position shows once playback has started (or the user moved it); before that only the length — in a box
+  // as wide as «0:00 / 0:00», right-aligned, so nothing moves when the position appears
+  const showTime = () => {
+    time.textContent = !duration ? (started ? wpFmt(cur()) : '') : started ? `${wpFmt(cur())} / ${wpFmt(duration)}` : wpFmt(duration);
+  };
   const draw = () => {
     const dpr = window.devicePixelRatio || 1, w = box.clientWidth, h = box.clientHeight;
     if (!w || !h) return;
@@ -1291,7 +1295,7 @@ function initWavePlayer(el) {
     });
     audio.addEventListener('play', () => {
       if (wpCurrent && wpCurrent !== audio) wpCurrent.pause();
-      wpCurrent = audio; setBtn(true); cancelAnimationFrame(raf); loop();
+      wpCurrent = audio; started = true; setBtn(true); cancelAnimationFrame(raf); loop();
     });
     audio.addEventListener('pause', () => { setBtn(false); draw(); showTime(); });
     audio.addEventListener('ended', () => { audio.currentTime = 0; setBtn(false); draw(); showTime(); });
@@ -1304,6 +1308,7 @@ function initWavePlayer(el) {
     frac = Math.min(1, Math.max(0, frac));
     if (!duration) return;
     const t = frac * duration;
+    started = true;
     if (audio && audio.readyState >= 1) audio.currentTime = t; else { pendingSeek = t; ensureAudio(); }
     draw(); showTime();
   };
