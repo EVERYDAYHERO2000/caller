@@ -26,6 +26,10 @@ FISH_INSTRUCTIONS = ("\n\nТвои ответы озвучивает синте�
 SENTENCE_END = ".!?…"
 FINISH_MAX_S = 2.0  # an interrupted Fish sentence may sound this much longer
 GREETING_TAG = "greeting"  # Fish phrase tag of the greeting synthesized before the answer
+# incoming: after the answer the agent listens this long before greeting — a caller who starts talking right
+# away («Здравствуйте, доставка "Петрович"…») isn't talked over with a fixed greeting
+FIRST_WORD_S = 1.0
+FIRST_PHRASE_MS = 700   # this much speech is a phrase, not just «алло?»
 # In a text-only session the model sometimes writes a function call into the reply text instead of calling it,
 # and the form keeps changing: «[TOOL_CALL_START]save_result {…}», a ``` block, «save_result({…})»,
 # «{{save_result "status": …}}», JSON {"name": …}, or just a line «Завершить звонок». Everything from such a
@@ -55,6 +59,14 @@ def greeting_note(text: str, said: bool) -> str:
     return (f"Разговор уже начат: как только собеседник ответил, прозвучало твоё приветствие «{text}». "
             "Второй раз не здоровайся и не повторяй его, даже если собеседник перебил тебя или переспросил "
             "«алло?» — отвечай на его слова и продолжай разговор.")
+
+
+def caller_first_note(text: str) -> str:
+    """The prompt note when an incoming caller spoke first and the fixed greeting was not played."""
+    return ("Собеседник заговорил первым, твоё приветствие не прозвучало. Если по его словам понятно, кто он и "
+            "зачем звонит (например, курьер или доставка), не говори заготовленное приветствие: ответь коротко "
+            "«Здравствуйте. Да, слушаю.» и сразу переходи к делу — ответь на его вопрос или задай первый нужный "
+            f"вопрос. Если непонятно (только «алло» или «здравствуйте») — начни с фразы «{text}».")
 
 
 def _visible(text: str) -> str:
@@ -521,8 +533,40 @@ class AgentSession:
             return None
         return task.result()
 
+    async def _caller_speaks_first(self) -> bytes | None:
+        """Incoming: listen FIRST_WORD_S after the answer. If the caller says a phrase right away (not a short
+        «алло?»), returns their audio (it goes to the model, which answers instead of the fixed greeting)."""
+        heard, voiced, quiet = bytearray(), 0, 0
+        end = self.loop.time() + FIRST_WORD_S
+        while not self.closed:
+            if voiced == 0 and self.loop.time() >= end:
+                return None  # silence: greet as usual
+            try:
+                frame = await asyncio.wait_for(self.frames.get(), 0.05)
+            except asyncio.TimeoutError:
+                continue
+            ms = len(frame) // 2 * 1000 // MODEM_RATE
+            if self._rms(frame) >= self.speech_level:
+                voiced, quiet = voiced + ms, 0
+            elif voiced:
+                quiet += ms
+            if voiced:
+                heard.extend(frame)
+            if voiced >= FIRST_PHRASE_MS:
+                log.info("the caller spoke first — no fixed greeting")
+                return bytes(heard)
+            if voiced and quiet >= 400:
+                return None  # a short «алло?» and a pause: greet
+        return None
+
     async def _open_conversation(self):
         """After the answer: the opening line, then the caller's audio goes to the model."""
+        early = await self._caller_speaks_first() if self.greeting and self.direction == "in" else None
+        if early:
+            self._greet_note = caller_first_note(self.greeting)
+            await self._send(self._session_config())
+            await self._uplink(early)
+            return
         if self.greeting:
             pcm = await self._pause_before_greeting()
             if pcm:
@@ -916,8 +960,8 @@ class AgentSession:
                 self.audio.play(f["pcm"])
         self._fish_tasks.append(asyncio.create_task(play()))
 
-    async def _uplink(self):
-        batch = bytearray()
+    async def _uplink(self, first: bytes = b""):
+        batch = bytearray(first)  # the caller's words heard before the conversation was opened
         while not self.closed:
             frame = await self.frames.get()
             batch.extend(self._gate(frame))
