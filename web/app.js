@@ -471,7 +471,7 @@ let menuState = null;
 function closeMenu() {
   if (!menuState) return;
   menuState.el.remove();
-  menuState.anchor.classList.remove('active');
+  if (menuState.mark) menuState.anchor.classList.remove('active');
   document.removeEventListener('mousedown', menuState.onOutside, true);
   document.removeEventListener('keydown', menuState.onKey, true);
   window.removeEventListener('scroll', closeMenu, true);
@@ -501,9 +501,11 @@ function openMenu(anchor, items) {
   el.style.left = `${Math.max(8, Math.min(r.right - el.offsetWidth, innerWidth - el.offsetWidth - 8))}px`;
   const list = items.filter(Boolean);
   $$('.menu-item', el).forEach((b) => b.onclick = (e) => { e.stopPropagation(); closeMenu(); guard(list[+b.dataset.i].run)(); });
-  anchor.classList.add('active');
+  // a "⋮" stays highlighted while its menu is open; a list item opened by a right click keeps its own classes
+  const mark = !at || anchor.classList.contains('kebab');
+  if (mark) anchor.classList.add('active');
   menuState = {
-    el, anchor,
+    el, anchor, mark,
     onOutside: (e) => { if (!el.contains(e.target) && !anchor.contains(e.target)) closeMenu(); },
     onKey: (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeMenu(); anchor.focus(); } },
   };
@@ -525,6 +527,17 @@ document.addEventListener('click', (e) => {
 
 // Right click on a table row or a widget (calls, the chat's contacts and tasks) = its "⋮" menu, opened at the
 // mouse. Text fields, links and selected text keep the browser's own behaviour.
+// a right click on a person in a list (Звонки, SMS): the same menu as "⋮" in the person's head, at the mouse
+function personContext(el, open) {
+  el.oncontextmenu = (e) => {
+    if (String(getSelection()).trim()) return;
+    e.preventDefault(); e.stopPropagation();
+    menuAt = { x: e.clientX, y: e.clientY };
+    open(el);
+    menuAt = null;
+  };
+}
+
 document.addEventListener('contextmenu', (e) => {
   // (the player of a call widget is part of the widget: a right click there opens the widget's menu too)
   if (e.target.closest('input, textarea, select, a[href], .menu') || String(getSelection()).trim()) return;
@@ -1020,6 +1033,10 @@ VIEWS.calls = {
       this.current = el.dataset.k;
       $$('.hub-item', root).forEach((x) => x.classList.toggle('active', x === el));
       if (this.thread()?.unseen) this.loadThreads(root); else this.loadFeed(root);  // loadThreads marks them seen
+    });
+    $$('.hub-item', root).forEach((el) => {
+      const t = list.find((x) => threadKey(x.number) === el.dataset.k);
+      if (t?.number) personContext(el, (a) => personMenu(a, t.number, { spam: t.spam, changed: () => this.loadThreads(root) }));
     });
   },
   thread() { return (this.threads || []).find((t) => threadKey(t.number) === this.current); },
@@ -1661,7 +1678,10 @@ VIEWS.sms = {
         <div class="body"><div class="row"><span class="person-name ellipsis">${esc(t.contact_name || t.number)}</span><span class="spacer"></span><span class="small faint">${fmtDate(t.ts)}</span></div>
         <div class="row"><span class="small muted ellipsis">${t.direction === 'out' ? 'Вы: ' : ''}${esc(t.text)}</span><span class="spacer"></span>${t.unread ? `<span class="badge primary">${t.unread}</span>` : ''}</div></div></div>`).join('')
       || `<div class="empty small">${icon('message')}<div>${q ? 'Никого не нашлось' : tag ? 'В этой папке сообщений нет' : 'Сообщений нет'}</div></div>`;
-    $$('.sms-item', root).forEach((el) => el.onclick = () => { this.current = el.dataset.n; this.loadThreads(root); });
+    $$('.sms-item', root).forEach((el) => {
+      el.onclick = () => { this.current = el.dataset.n; this.loadThreads(root); };
+      personContext(el, (a) => this.personMenu(a, el.dataset.n, root));
+    });
     await this.loadChat(root);
   },
   async loadChat(root) {
@@ -1694,9 +1714,17 @@ VIEWS.sms = {
       sendSmsInBackground(this.current, text);
     });
     const hk = $('.head-kebab .kebab', chat), number = this.current;
-    hk.onclick = (e) => { e.stopPropagation(); personMenu(hk, number, { spam: this.spam?.has((number || '').replace(/\D/g, '').slice(-10)), sms: false, changed: () => this.loadThreads(root), extra: [
-      { label: 'Удалить диалог', icon: 'trash', danger: true, run: () => confirmBox('Удалить весь диалог?', async () => { await api('/sms?number=' + encodeURIComponent(number), { method: 'DELETE' }); this.current = null; this.loadThreads(root); }) },
-    ] }); };
+    hk.onclick = (e) => { e.stopPropagation(); this.personMenu(hk, number, root); };
+  },
+  // the person's menu: "⋮" in the dialog's head, or a right click on the person in the list
+  personMenu(anchor, number, root) {
+    personMenu(anchor, number, { spam: this.spam?.has((number || '').replace(/\D/g, '').slice(-10)), sms: false, changed: () => this.loadThreads(root), extra: [
+      { label: 'Удалить диалог', icon: 'trash', danger: true, run: () => confirmBox('Удалить весь диалог?', async () => {
+        await api('/sms?number=' + encodeURIComponent(number), { method: 'DELETE' });
+        if ((this.current || '').replace(/\D/g, '').slice(-10) === (number || '').replace(/\D/g, '').slice(-10)) this.current = null;
+        this.loadThreads(root);
+      }) },
+    ] });
   },
   onEvent(ev, root) { if (ev.event === 'sms.new' || ev.event === 'sms.updated') this.loadThreads(root); },
 };
