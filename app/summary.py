@@ -8,7 +8,7 @@ import logging
 
 import aiohttp
 
-from . import db
+from . import db, plates
 from .events import hub
 
 log = logging.getLogger("summary")
@@ -101,6 +101,7 @@ async def create(call_id: int) -> dict:
     if not text:
         raise SummaryError("модель вернула пустой ответ")
     usage = resp.get("usage") or {}
+    text = await _car_numbers(call, text)
     try:
         # plain INSERT (not REPLACE): a second summary for the same call is rejected by the PK
         db.execute("INSERT INTO call_summaries(call_id, text, model, input_tokens, output_tokens, created_at) "
@@ -112,6 +113,31 @@ async def create(call_id: int) -> dict:
     log.info("summary for call %s saved (%s tokens)", call_id, usage.get("total_tokens"))
     hub.publish("call.summary", row)
     return row
+
+
+def _strings(value) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [s for v in value.values() for s in _strings(v)]
+    if isinstance(value, list):
+        return [s for v in value for s in _strings(v)]
+    return []
+
+
+async def _car_numbers(call: dict, text: str) -> str:
+    """A separate pass: car numbers said in words («А двести тридцать четыре МР…») are written with digits in
+    the summary and in what the agent saved («А 234 МР 777»). The summary is returned; the call row is fixed."""
+    saved = [call.get("summary") or ""] + _strings(call.get("result"))
+    pairs = await plates.find([text] + saved, call["id"])
+    if not pairs:
+        return text
+    fixed = {"summary": plates.apply(call.get("summary") or "", pairs),
+             "result": plates.apply_deep(call.get("result"), pairs)}
+    changed = {k: v for k, v in fixed.items() if v != call.get(k)}
+    if changed:
+        db.update("calls", call["id"], changed)
+    return plates.apply(text, pairs)
 
 
 async def auto(call_id: int):
