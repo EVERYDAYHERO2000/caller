@@ -83,7 +83,7 @@ window.I18N_EN = {
   'агент на линии': 'agent on the line', 'агент не подключён': 'agent not connected', 'вы на линии': 'you are on the line',
   'без агента': 'no agent', 'через браузер': 'via browser', 'микрофон выкл.': 'mic off', 'Включить микрофон': 'Unmute',
   'Очистить историю агента': 'Clear the agent\'s history', 'Очистить историю агента?': 'Clear the agent\'s history?', 'Очистить': 'Clear',
-  'Удалить все звонки': 'Delete all calls', 'Удалить все звонки?': 'Delete all calls?',
+  'Удалить все звонки': 'Delete all calls', 'Удалить звонок': 'Delete call', 'Удалить звонок?': 'Delete the call?', 'Звонок удалён': 'Call deleted', 'Звонок удалится вместе с записью, расшифровкой и резюме, агенты перестанут его знать. Это действие нельзя отменить.': 'The call will be deleted with its recording, transcript and summary, and the agents will no longer know it. This can\'t be undone.', 'Удалить все звонки?': 'Delete all calls?',
   'Убрать из истории агента': 'Remove from the agent\'s history', 'Вернуть в историю агента': 'Return to the agent\'s history',
   'Агенты снова учитывают этот звонок': 'The agents take this call into account again',
   'Агенты больше не учитывают этот звонок — в журнале он остаётся': 'The agents no longer take this call into account — it stays in the journal',

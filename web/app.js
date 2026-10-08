@@ -1354,7 +1354,7 @@ function personMenu(anchor, number, { spam = false, sms = true, changed, extra =
       changed?.();
     }) },
     '-',
-    ...historyMenuItems(number, changed),
+    ...historyMenuItems(number, changed, { forget: false }),  // clearing the agent's memory — only in Контакты
     ...extra,
   ]);
 }
@@ -1362,10 +1362,10 @@ function personMenu(anchor, number, { spam = false, sms = true, changed, extra =
 // The agents' memory of a person. «Очистить историю агента»: the agents forget the calls and SMS (they stay in
 // the journal) and the contact's AI chat is erased. «Удалить все звонки»: the calls go, the AI chat too.
 // Both can't be undone — a confirmation first.
-function historyMenuItems(number, changed) {
+function historyMenuItems(number, changed, { forget = true } = {}) {
   const q = encodeURIComponent(number);
   return [
-    { label: 'Очистить историю агента', icon: 'eyeOff', danger: true, run: () => dialog({
+    forget && { label: 'Очистить историю агента', icon: 'eyeOff', danger: true, run: () => dialog({
       title: 'Очистить историю агента?', danger: true, confirm: 'Очистить',
       text: 'Агенты забудут все звонки и SMS с этим абонентом, переписка с ИИ-ассистентом по нему удалится. Сами звонки и SMS останутся в журнале. Это действие нельзя отменить.',
       onConfirm: async () => {
@@ -1403,7 +1403,11 @@ function callMenuItems(c, changed) {
         await api(`/calls/${c.id}/forgotten`, { method: 'PUT', body: { forgotten: true } });
         toast('Агенты больше не учитывают этот звонок — в журнале он остаётся', 'ok'); changed?.();
       } },
-    { label: 'Удалить запись', icon: 'trash', danger: true, run: () => confirmBox('Удалить запись звонка?', async () => { await api('/calls/' + c.id, { method: 'DELETE' }); changed?.(); }) },
+    { label: 'Удалить звонок', icon: 'trash', danger: true, run: () => dialog({
+      title: 'Удалить звонок?', danger: true, confirm: 'Удалить',
+      text: 'Звонок удалится вместе с записью, расшифровкой и резюме, агенты перестанут его знать. Это действие нельзя отменить.',
+      onConfirm: async () => { await api('/calls/' + c.id, { method: 'DELETE' }); toast('Звонок удалён', 'ok'); refreshBadges(); },
+    }).then((ok) => ok && changed?.()) },
   ];
 }
 
