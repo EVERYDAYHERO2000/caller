@@ -546,12 +546,12 @@ select { appearance: none; -webkit-appearance: none; padding-right: 38px;  /* na
 .btn-spin { position: absolute; top: 50%; left: 50%; margin: -7.5px 0 0 -7.5px; }
 /* a page or panel waiting for its data */
 .page-loader { display: grid; place-items: center; min-height: 160px; padding: 24px; }
-.page-loader .spin { width: 28px; height: 28px; border-width: 3px; color: var(--primary); }
+.page-loader .spin { width: 28px; height: 28px; border-width: 3px; color: var(--faint); }
 #view { position: relative; }
 #view.view-loading > :not(.page-loader) { visibility: hidden; }
 /* centred in the screen's height: #view starts under the 60px topbar */
 #view.view-loading::after { content: ''; position: absolute; top: calc(50vh - 60px - 14px); left: 50%; width: 28px; height: 28px; margin-left: -14px;
-  border-radius: 50%; border: 3px solid var(--primary); border-top-color: transparent; animation: select-spin .7s linear infinite; }
+  border-radius: 50%; border: 3px solid var(--faint); border-top-color: transparent; animation: select-spin .7s linear infinite; }
 #view.view-loading:has(> .page-loader)::after { display: none; }
 #view > .page-loader { min-height: calc(100vh - 128px); padding: 0; }  /* centre at 50vh: 64px above, 64px below */
 
