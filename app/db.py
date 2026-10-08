@@ -464,6 +464,12 @@ def _migrate():
         mark = _conn.execute("SELECT MAX(calls_seen_at) FROM users").fetchone()[0] if "calls_seen_at" in {
             r[1] for r in _conn.execute("PRAGMA table_info(users)")} else None
         _conn.execute("UPDATE calls SET seen=1 WHERE ended_at IS NULL OR ? IS NULL OR ended_at <= ?", (mark, mark))
+    if "forgotten" not in cols:
+        # the agents don't know this call (its contact's history was cleared, or this call was taken out of it);
+        # the call itself stays in the journal
+        _conn.execute("ALTER TABLE calls ADD COLUMN forgotten INTEGER DEFAULT 0")
+    if "forgotten" not in {r[1] for r in _conn.execute("PRAGMA table_info(sms)")}:
+        _conn.execute("ALTER TABLE sms ADD COLUMN forgotten INTEGER DEFAULT 0")  # the same for an SMS
     for col in ("tokens_in", "tokens_out", "tokens_cached", "fish_chars", "fish_credits"):  # provider usage per call
         if col not in cols:
             _conn.execute(f"ALTER TABLE calls ADD COLUMN {col} INTEGER DEFAULT 0")

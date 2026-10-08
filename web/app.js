@@ -29,6 +29,7 @@ const ICONS = {
   moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
   menu: '<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>',
   eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff: '<path d="M17.9 17.9A10.1 10.1 0 0 1 12 20C5 20 1 12 1 12a18.5 18.5 0 0 1 5.1-5.9M9.9 4.2A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.2 3.2M14.1 14.1a3 3 0 1 1-4.2-4.2"/><line x1="1" y1="1" x2="23" y2="23"/>',
   clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
   upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
   terminal: '<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>',
@@ -1051,17 +1052,7 @@ VIEWS.calls = {
       const id = +el.dataset.id;
       const k = $('.kebab', el);
       const c = this.items.find((x) => x.id === id);
-      if (k) k.onclick = (e) => { e.stopPropagation(); openMenu(k, [
-        { label: 'Подробнее', icon: 'eye', run: () => showCall(id) },
-        ...(c?.recording ? [{ label: 'Скачать аудиофайл', icon: 'download', run: () => downloadRecording(c) }] : []),
-        { label: 'Найти договорённости', icon: 'tasks', run: async () => {
-          toast('ИИ ищет договорённости в разговоре…', 'info');
-          const r = await api(`/calls/${id}/tasks`, { method: 'POST' });
-          toast(r.added ? `В «Дела» добавлено: ${r.added}` : 'Договорённостей в разговоре не нашлось', r.added ? 'ok' : 'info');
-        } },
-        '-',
-        { label: 'Удалить запись', icon: 'trash', danger: true, run: () => confirmBox('Удалить запись звонка?', async () => { await api('/calls/' + id, { method: 'DELETE' }); this.loadThreads(root); }) },
-      ]); };
+      if (k) k.onclick = (e) => { e.stopPropagation(); openMenu(k, callMenuItems(c || { id }, () => this.loadThreads(root))); };
     });
     if (state.active && this.items.some((x) => x.id === state.active.id)) await this.renderLive(root);
   },
@@ -1074,7 +1065,7 @@ VIEWS.calls = {
       <div class="row"><span class="call-dir" title="${c.direction === 'in' ? 'Входящий' : 'Исходящий'}">${icon(c.direction === 'in' ? 'phoneIn' : 'phoneOut')}</span>
         ${((who) => `<span class="ellipsis" title="${esc(who)}">${esc(who)}</span>`)([c.agent_name ? `Агент ${c.agent_name}` : c.mode === 'browser' ? 'Через браузер' : 'Без агента', c.script_name].filter(Boolean).join(' · '))}
         <span class="small faint nowrap">${fmtDate(c.started_at || c.created_at)}</span>
-        ${statusBadge(c.status)}<span class="spacer"></span>
+        ${statusBadge(c.status)}${c.forgotten ? `<span class="badge forgot" title="Не в истории агента: агенты не учитывают этот звонок" aria-label="Не в истории агента">${icon('eyeOff')}</span>` : ''}<span class="spacer"></span>
         ${live ? '<span class="mono" data-timer></span>' : c.duration && !c.recording ? `<span class="small muted mono">${fmtDur(c.duration)}</span>` : ''}${KEBAB}</div>
       ${live ? '<div class="live-slot"></div>' : c.recording ? wavePlayer(`/api/calls/${c.id}/recording`, `/api/calls/${c.id}/waveform`, { labels: ['собеседник', c.mode === 'browser' ? 'вы' : 'агент'] }) : ''}</div>
       ${live ? '' : callGist(c)}</div>`;
@@ -1362,8 +1353,58 @@ function personMenu(anchor, number, { spam = false, sms = true, changed, extra =
       refreshBadges();
       changed?.();
     }) },
+    '-',
+    ...historyMenuItems(number, changed),
     ...extra,
   ]);
+}
+
+// The agents' memory of a person. «Очистить историю агента»: the agents forget the calls and SMS (they stay in
+// the journal) and the contact's AI chat is erased. «Удалить все звонки»: the calls go, the AI chat too.
+// Both can't be undone — a confirmation first.
+function historyMenuItems(number, changed) {
+  const q = encodeURIComponent(number);
+  return [
+    { label: 'Очистить историю агента', icon: 'eyeOff', danger: true, run: () => dialog({
+      title: 'Очистить историю агента?', danger: true, confirm: 'Очистить',
+      text: 'Агенты забудут все звонки и SMS с этим абонентом, переписка с ИИ-ассистентом по нему удалится. Сами звонки и SMS останутся в журнале. Это действие нельзя отменить.',
+      onConfirm: async () => {
+        const r = await api('/history/forget', { method: 'POST', body: { number } });
+        toast(`История агента очищена: звонков — ${r.calls}, SMS — ${r.sms}`, 'ok');
+      } }).then((ok) => ok && changed?.()) },
+    { label: 'Удалить все звонки', icon: 'trash', danger: true, run: () => dialog({
+      title: 'Удалить все звонки?', danger: true, confirm: 'Удалить',
+      text: 'Все звонки с этим абонентом удалятся вместе с записями, расшифровками и резюме, переписка с ИИ-ассистентом по нему — тоже. SMS останутся. Это действие нельзя отменить.',
+      onConfirm: async () => {
+        const r = await api('/history/calls?number=' + q, { method: 'DELETE' });
+        toast(`Удалено звонков: ${r.calls}`, 'ok');
+        refreshBadges();
+      } }).then((ok) => ok && changed?.()) },
+  ];
+}
+
+// "⋮" of a call widget (the calls feed, the contact's AI chat): changed() reloads what shows it
+function callMenuItems(c, changed) {
+  return [
+    { label: 'Подробнее', icon: 'eye', run: () => showCall(c.id) },
+    c.recording ? { label: 'Скачать аудиофайл', icon: 'download', run: () => downloadRecording(c) } : null,
+    { label: 'Найти договорённости', icon: 'tasks', run: async () => {
+      toast('ИИ ищет договорённости в разговоре…', 'info');
+      const r = await api(`/calls/${c.id}/tasks`, { method: 'POST' });
+      toast(r.added ? `В «Дела» добавлено: ${r.added}` : 'Договорённостей в разговоре не нашлось', r.added ? 'ok' : 'info');
+    } },
+    '-',
+    c.forgotten
+      ? { label: 'Вернуть в историю агента', icon: 'eye', run: async () => {
+        await api(`/calls/${c.id}/forgotten`, { method: 'PUT', body: { forgotten: false } });
+        toast('Агенты снова учитывают этот звонок', 'ok'); changed?.();
+      } }
+      : { label: 'Убрать из истории агента', icon: 'eyeOff', run: async () => {
+        await api(`/calls/${c.id}/forgotten`, { method: 'PUT', body: { forgotten: true } });
+        toast('Агенты больше не учитывают этот звонок — в журнале он остаётся', 'ok'); changed?.();
+      } },
+    { label: 'Удалить запись', icon: 'trash', danger: true, run: () => confirmBox('Удалить запись звонка?', async () => { await api('/calls/' + c.id, { method: 'DELETE' }); changed?.(); }) },
+  ];
 }
 
 // the call's recording as a file named after the person and the time: «Пётр Васильев 2025-09-27 20-00.wav»
@@ -2181,6 +2222,8 @@ VIEWS.contacts = {
         { label: 'Звонок агентом', icon: 'bot', run: () => { location.hash = `#/calls?number=${encodeURIComponent(byId(id).phone)}`; } },
         { label: 'Позвонить', icon: 'phoneOut', run: () => { location.hash = `#/calls?mode=browser&number=${encodeURIComponent(byId(id).phone)}`; } },
         { label: 'Написать SMS', icon: 'message', run: () => { location.hash = `#/sms?number=${encodeURIComponent(byId(id).phone)}`; } },
+        '-',
+        ...historyMenuItems(byId(id).phone, () => this.load(root)),
         ...(byId(id).is_self ? [] : ['-',  // «Этот номер» stays
           { label: 'Удалить', icon: 'trash', danger: true, run: () => confirmBox('Удалить контакт?', async () => { await api('/contacts/' + id, { method: 'DELETE' }); this.load(root); }) }]),
       ],
@@ -2336,7 +2379,7 @@ async function contactHistory(m, c) {
       if (it.kind === 'call') return `<div class="hist-row left"><div class="hist-call">${VIEWS.calls.card(it.call)}</div></div>`;
       if (it.kind === 'sms') {
         const x = it.sms, out = x.direction === 'out';
-        return bubble(out ? 'right' : 'left', x.text, `SMS · ${time(x.ts)}${out && x.status !== 'sent' ? ' · ' + esc(x.status) : ''}`, out ? 'me sms' : 'sms');
+        return bubble(out ? 'right' : 'left', x.text, `SMS · ${time(x.ts)}${out && x.status !== 'sent' ? ' · ' + esc(x.status) : ''}${x.forgotten ? ' · не в истории агента' : ''}`, out ? 'me sms' : 'sms');
       }
       const x = it.chat;
       if (x.role === 'user') return bubble('right', x.text, `Вы · ${time(x.created_at)}`, 'me');
@@ -2345,10 +2388,7 @@ async function contactHistory(m, c) {
     $$('.hist-call .call-card', feed).forEach((el) => {
       const k = $('.kebab', el), id = +el.dataset.id;
       const call = items.find((it) => it.kind === 'call' && it.call.id === id)?.call;
-      if (k) k.onclick = (e) => { e.stopPropagation(); openMenu(k, [  // the same menu as a call widget elsewhere
-        { label: 'Открыть звонок', icon: 'eye', run: () => showCall(id) },
-        call?.recording ? { label: 'Скачать аудиофайл', icon: 'download', run: () => downloadRecording(call) } : null,
-      ]); };
+      if (k) k.onclick = (e) => { e.stopPropagation(); openMenu(k, callMenuItems(call || { id }, load)); };  // the same menu as elsewhere
     });
     feed.scrollTop = feed.scrollHeight;
   };

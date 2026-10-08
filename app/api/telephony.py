@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from .. import ambience, config, db, summary, transcribe, waveform
+from .. import ambience, config, db, history_chat, summary, transcribe, waveform
 from ..calls import AgentNotReady, LineBusy, calls
 from ..modem.manager import modem
 
@@ -256,13 +256,63 @@ def delete_call(call_id: int):
         raise HTTPException(404, "not found")
     if calls.current and calls.current.id == call_id:
         raise HTTPException(409, "звонок активен — сначала завершите его")
+    return {"deleted": _delete_call(row)}
+
+
+def _delete_call(row: dict) -> bool:
+    """The call with its recording, transcript and summary («Дела» from it stay, without the link)."""
+    call_id = row["id"]
     if row.get("recording"):
         (config.RECORDINGS_DIR / row["recording"]).unlink(missing_ok=True)
     db.execute("DELETE FROM call_messages WHERE call_id=?", (call_id,))
+    db.execute("UPDATE tasks SET call_id=NULL WHERE call_id=?", (call_id,))
     deleted = db.delete("calls", call_id)
     # the summary is protected while its call exists, so it is removed after the call
     db.execute("DELETE FROM call_summaries WHERE call_id=?", (call_id,))
-    return {"deleted": deleted}
+    return deleted
+
+
+class NumberIn(BaseModel):
+    number: str = Field(..., description="Номер абонента (любая запись)")
+
+
+def _person(number: str) -> tuple[str, dict | None]:
+    key = db.normalize_phone(number)[-10:]
+    if not key:
+        raise HTTPException(422, "нужен номер")
+    return number, db.find_contact(number)
+
+
+@router.post("/history/forget", tags=["calls"])
+def forget_history(body: NumberIn):
+    """«Очистить историю агента» абонента: агенты забывают все его звонки и SMS (они остаются в журнале),
+    чат ИИ-ассистента контакта стирается. Новые звонки и SMS агент снова будет знать. Необратимо."""
+    number, contact = _person(body.number)
+    return history_chat.forget(number, contact["id"] if contact else None)
+
+
+@router.delete("/history/calls", tags=["calls"])
+def delete_person_calls(number: str = Query(..., description="Номер абонента")):
+    """«Удалить все звонки» абонента: звонки с записями, расшифровками и резюме, и чат ИИ-ассистента контакта.
+    SMS остаются. Активный звонок и звонки в очереди не трогаются. Необратимо."""
+    number, contact = _person(number)
+    rows = [c for c in history_chat._calls({"phone": number}) if c["status"] != "queued"
+            and not (calls.current and calls.current.id == c["id"])]
+    n = sum(1 for c in rows if _delete_call(c))
+    chat_n = db.execute("DELETE FROM contact_chat WHERE contact_id=?", (contact["id"],)).rowcount if contact else 0
+    return {"calls": n, "chat": chat_n}
+
+
+class ForgetIn(BaseModel):
+    forgotten: bool = Field(True, description="true — агенты не знают этот звонок; false — снова знают")
+
+
+@router.put("/calls/{call_id}/forgotten", tags=["calls"])
+def forget_call(call_id: int, body: ForgetIn):
+    """Убрать звонок из истории агента (он остаётся в журнале) или вернуть его туда."""
+    if not db.get("calls", call_id):
+        raise HTTPException(404, "not found")
+    return db.update("calls", call_id, {"forgotten": int(body.forgotten)})
 
 
 def _calls_new(user: dict | None = None) -> int:

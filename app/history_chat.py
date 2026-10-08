@@ -51,7 +51,8 @@ def _when(ts: str | None) -> str:
     return f"{d:%d.%m.%Y} ({WEEKDAYS[d.weekday()]}) {d:%H:%M}"
 
 
-def _calls(contact: dict) -> list[dict]:
+def _calls(contact: dict, known: bool = False) -> list[dict]:
+    """The calls with the contact's number, oldest first; known: only those the agents know (not forgotten)."""
     key = _key(contact["phone"])
     if not key:
         return []
@@ -60,15 +61,29 @@ def _calls(contact: dict) -> list[dict]:
         LEFT JOIN agents a ON a.id=c.agent_id LEFT JOIN scripts s ON s.id=c.script_id
         LEFT JOIN call_summaries cs ON cs.call_id=c.id
         WHERE c.number LIKE ? AND c.status NOT IN ('queued') ORDER BY c.id""", (f"%{key}",))
-    return [r for r in rows if _key(r["number"]) == key]
+    return [r for r in rows if _key(r["number"]) == key and not (known and r.get("forgotten"))]
 
 
-def _sms(contact: dict) -> list[dict]:
+def _sms(contact: dict, known: bool = False) -> list[dict]:
     key = _key(contact["phone"])
     if not key:
         return []
     rows = db.fetch_all("sms", "SELECT * FROM sms WHERE number LIKE ? ORDER BY id", (f"%{key}",))
-    return [r for r in rows if _key(r["number"]) == key]
+    return [r for r in rows if _key(r["number"]) == key and not (known and r.get("forgotten"))]
+
+
+def forget(number: str, contact_id: int | None = None) -> dict:
+    """«Очистить историю агента»: the agents forget every call and SMS with the number and the contact's AI chat
+    is erased. The calls and SMS stay in the journal; what happens after this is known again."""
+    contact = {"phone": number}
+    calls_ids = [c["id"] for c in _calls(contact) if not c.get("forgotten")]
+    sms_ids = [m["id"] for m in _sms(contact) if not m.get("forgotten")]
+    for table, ids in (("calls", calls_ids), ("sms", sms_ids)):
+        if ids:
+            db.execute(f"UPDATE {table} SET forgotten=1 WHERE id IN ({','.join('?' * len(ids))})", tuple(ids))
+    chat_n = db.execute("DELETE FROM contact_chat WHERE contact_id=?", (contact_id,)).rowcount if contact_id else 0
+    log.info("history of %s forgotten: %s calls, %s SMS, %s chat messages", number, len(calls_ids), len(sms_ids), chat_n)
+    return {"calls": len(calls_ids), "sms": len(sms_ids), "chat": chat_n}
 
 
 def chat(contact_id: int) -> list[dict]:
@@ -122,7 +137,7 @@ def card_text(contact: dict) -> str:
 def history_text(contact: dict) -> str:
     """The history of dealings as the model reads it."""
     events = []
-    calls = _calls(contact)
+    calls = _calls(contact, known=True)
     full_from = max(0, len(calls) - FULL_TRANSCRIPTS)
     for i, c in enumerate(calls):
         head = [f"ЗВОНОК {_when(c.get('started_at') or c.get('created_at'))}",
@@ -142,7 +157,7 @@ def history_text(contact: dict) -> str:
             body.append(("Расшифровка:\n" + t) if i >= full_from or not c.get("ai_summary")
                         else "(расшифровка опущена — старый звонок, см. резюме)")
         events.append((c.get("started_at") or c.get("created_at") or "", "\n".join(head + body)))
-    for m in _sms(contact):
+    for m in _sms(contact, known=True):
         who = "контакт → пользователю" if m["direction"] == "in" else "пользователь → контакту"
         events.append((m.get("ts") or "", f"SMS {_when(m.get('ts'))}, {who}:\n{m['text']}"))
     events.sort(key=lambda e: e[0])
@@ -230,7 +245,7 @@ def past_calls_brief(number: str, exclude_call_id: int | None = None, calls_limi
         return ""
     contact = {"phone": number}
     events = []
-    for c in _calls(contact):
+    for c in _calls(contact, known=True):
         if c["id"] == exclude_call_id or c["status"] in ("dialing", "ringing", "answering", "active"):
             continue
         gist, agreed = _gist(c)
@@ -244,7 +259,7 @@ def past_calls_brief(number: str, exclude_call_id: int | None = None, calls_limi
         line = f"- {when}, {kind} звонок: {gist}" + (f" Договорились: {agreed}" if agreed else "")
         events.append((c.get("started_at") or c.get("created_at") or "", line))
     events = events[-calls_limit:]
-    sms = _sms(contact)[-sms_limit:]
+    sms = _sms(contact, known=True)[-sms_limit:]
     for m in sms:
         who = "от него" if m["direction"] == "in" else "ему"
         events.append((m.get("ts") or "", f"- {_when(m.get('ts'))}, SMS {who}: {m['text'][:300]}"))

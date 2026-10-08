@@ -661,7 +661,7 @@ def _list_calls(contact_query: str = "", date_from: str = "", date_to: str = "",
         day = (c.get("started_at") or c.get("created_at") or "")[:10]
         if (date_from and day < date_from) or (date_to and day > date_to):
             continue
-        gist, agreed = _gist(c)
+        gist, agreed = ("(агент не помнит этот звонок: история очищена)", "") if c.get("forgotten") else _gist(c)
         when = c.get("started_at") or c.get("created_at") or ""
         out.append({"id": c["id"], "when": f"{when[8:10]}.{when[5:7]}.{when[:4]} {when[11:16]}" if when else "",
                     "direction": "входящий" if c["direction"] == "in" else "исходящий",
