@@ -540,6 +540,18 @@ select { appearance: none; -webkit-appearance: none; padding-right: 38px;  /* na
 .voice-test .switch { min-height: var(--h-s); font-size: 13.5px; }
 .spin { display: inline-block; width: 15px; height: 15px; border-radius: 50%; border: 2px solid currentColor;
   border-top-color: transparent; animation: select-spin .7s linear infinite; }
+/* a button whose request is running: its content gives way to a spinner, the width stays */
+.btn.busy, .btn.busy:disabled { position: relative; color: transparent !important; opacity: 1; cursor: progress; }
+.btn.busy > :not(.btn-spin) { visibility: hidden; }
+.btn-spin { position: absolute; top: 50%; left: 50%; margin: -7.5px 0 0 -7.5px; }
+/* a page or panel waiting for its data */
+.page-loader { display: grid; place-items: center; min-height: 160px; padding: 24px; }
+.page-loader .spin { width: 28px; height: 28px; border-width: 3px; color: var(--primary); }
+#view { position: relative; }
+#view.view-loading > :not(.page-loader) { visibility: hidden; }
+#view.view-loading::after { content: ''; position: absolute; top: 120px; left: 50%; width: 28px; height: 28px; margin-left: -14px;
+  border-radius: 50%; border: 3px solid var(--primary); border-top-color: transparent; animation: select-spin .7s linear infinite; }
+#view.view-loading:has(> .page-loader)::after { display: none; }
 
 /* ---------------------------------------------------------------- confirm dialog (centred) */
 .dialog-backdrop { position: fixed; inset: 0; z-index: 1100; display: grid; place-items: center; padding: 16px;

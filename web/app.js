@@ -98,7 +98,50 @@ const state = {
   view: null, callStart: null,
 };
 
-async function api(path, { method = 'GET', body } = {}) {
+// A button that sends something shows a spinner until its request is done: the button pressed just before
+// a non-GET request is busy while it runs (handlers stay as they are). Modal and dialog buttons spin themselves.
+let pressed = null;
+document.addEventListener('click', (e) => {
+  const b = e.target.closest?.('button, .btn');
+  pressed = b && !b.matches('[role=tab], .menu-item') ? { b, t: performance.now() } : null;
+}, true);
+document.addEventListener('submit', (e) => {
+  const b = e.submitter || e.target.querySelector('button[type=submit], button:not([type])');
+  if (b) pressed = { b, t: performance.now() };
+}, true);
+function busyButton(b, promise) {
+  b._busy = (b._busy || 0) + 1;
+  const timer = setTimeout(() => {  // fast requests don't flicker
+    if (!b._busy || b.classList.contains('busy')) return;
+    const sp = document.createElement('span');
+    sp.className = 'spin btn-spin';
+    sp.style.color = getComputedStyle(b).color;
+    b.classList.add('busy'); b.disabled = true; b.appendChild(sp);
+  }, 150);
+  const done = () => {
+    if (--b._busy) return;
+    clearTimeout(timer);
+    if (!b.classList.contains('busy')) return;
+    b.classList.remove('busy'); b.disabled = false; $('.btn-spin', b)?.remove();
+  };
+  promise.then(done, done);
+}
+// the page's first data: the view shows a spinner until the requests started while it renders are done
+const pageLoad = { on: false, n: 0, idle: null };
+
+async function api(path, opts = {}) {
+  const p = apiCall(path, opts);
+  const b = pressed && performance.now() - pressed.t < 400 && pressed.b.isConnected && !pressed.b.disabled ? pressed.b : null;
+  if (b && (opts.method || 'GET') !== 'GET') busyButton(b, p);
+  if (pageLoad.on) {
+    pageLoad.n++;
+    const done = () => { if (--pageLoad.n === 0) pageLoad.idle?.(); };
+    p.then(done, done);
+  }
+  return p;
+}
+
+async function apiCall(path, { method = 'GET', body } = {}) {
   const headers = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const r = await fetch('/api' + path, { method, headers, credentials: 'same-origin', body: body !== undefined ? JSON.stringify(body) : undefined });
@@ -1839,7 +1882,7 @@ VIEWS.tasks = {
     });
   },
   async drawMap(root, body, items) {
-    body.innerHTML = '<div class="empty">Загрузка карты…</div>';
+    body.innerHTML = LOADER;
     const key = await mapsKey();
     if (!key) return mapsKeyForm(body, () => this.draw(root));
     let ym;
@@ -2178,7 +2221,7 @@ function editContact(c, done, tab = 0) {
       <section class="tab-pane" data-pane="1" role="tabpanel" hidden>${form}</section>
       <section class="tab-pane history-pane" data-pane="0" role="tabpanel">
         <div class="history">
-          <div class="hist-feed" id="hist-feed"><div class="empty small">Загрузка…</div></div>
+          <div class="hist-feed" id="hist-feed">${LOADER}</div>
           <form class="hist-compose" id="hist-ask"><textarea id="hist-q" rows="1" placeholder="Спросите ИИ об истории общения: «когда мы договорились встретиться?»"></textarea>
             <button class="btn btn-primary btn-icon" type="submit" title="Спросить">${icon('send')}</button></form></div>
       </section>`,
@@ -3087,7 +3130,7 @@ function editAgent(a, catalog, done) {
 const fmtInt = (n) => (n == null ? '—' : Number(n).toLocaleString(I18N.locale));
 // title: the card heading (Settings → a provider tab: «Использование»; «Провайдеры»: the provider name)
 async function providerUsage(el, provider, title = '') {
-  el.innerHTML = '<div class="card"><div class="empty">Загрузка…</div></div>';
+  el.innerHTML = `<div class="card">${LOADER}</div>`;
   let d;
   try { d = await api('/providers/usage'); } catch (e) { el.innerHTML = `<div class="card muted small">${esc(e.message)}</div>`; return; }
   const tile = (label, value, sub = '') => `<div class="card stat"><div class="label">${label}</div><div class="value" style="font-size:22px">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
@@ -3369,7 +3412,7 @@ VIEWS.settings = {
       this.bindSave(root);
       providerUsage($('#usage-card', p), 'fish');
     } else if (this.tab === 'power') {
-      p.innerHTML = '<div class="empty">Загрузка…</div>';
+      p.innerHTML = LOADER;
       const sys = await api('/system').catch(() => null);
       const pw = sys?.power || {}, can = !!sys?.helper;
       const govs = pw.governors || [];
@@ -3652,10 +3695,21 @@ async function route() {
   setActions('');
   renderNav(); renderCallBar();
   const root = $('#view');
-  root.innerHTML = '<div class="empty">Загрузка…</div>';
+  root.innerHTML = LOADER;
+  const token = {};
+  route.token = token;
+  // the content stays hidden (a spinner instead) until its first data has come — at most PAGE_WAIT ms
+  root.classList.add('view-loading');
+  pageLoad.on = true; pageLoad.n = 0;
   try { await view.render(root, new URLSearchParams(qs || '')); }
   catch (e) { root.innerHTML = `<div class="card empty">${icon('alert')}<div>${esc(e.message)}</div></div>`; }
+  finally { pageLoad.on = false; }
+  if (pageLoad.n) await new Promise((ok) => { pageLoad.idle = ok; setTimeout(ok, PAGE_WAIT); });
+  pageLoad.idle = null;
+  if (route.token === token) root.classList.remove('view-loading');
 }
+const PAGE_WAIT = 4000;
+const LOADER = '<div class="page-loader" role="status" aria-label="Загрузка"><span class="spin"></span></div>';
 
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
