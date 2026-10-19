@@ -34,6 +34,30 @@ REST API и базу SQLite. Запускается как systemd-сервис,
 - **Настройки**: порты модема, режим сети (CNMP), APN, громкость и усиление, автоответ,
   аудио, ключи Yandex, API-токен, AT-консоль и лог событий модема (URC).
 
+## Корпус для 3D-печати
+
+В папке [rpi3_lte_case](rpi3_lte_case/README_RU.md) — корпус для Raspberry Pi 3 Model B
+и Waveshare SIM7600G-H M.2 4G HAT: основание, вентилируемая крышка со стенками
+высотой 10 мм, исходники OpenSCAD и генератор STL.
+Габарит собранного корпуса — **102 × 72 × 52,4 мм**.
+
+- [Основание STL](rpi3_lte_case/stl/base.stl)
+- [Крышка STL](rpi3_lte_case/stl/lid.stl)
+- [Печатный стол для Flashforge Adventurer 5M Pro, сопло 0,4 мм](rpi3_lte_case/print_plate_5m_pro.3mf)
+- [Размеры, настройки печати, крепёж и сборка](rpi3_lte_case/README_RU.md)
+
+### Виды модели
+
+![Модель корпуса с приподнятой крышкой](rpi3_lte_case/preview.png)
+
+![Раскладка основания и крышки для печати](rpi3_lte_case/images/print-plate.png)
+
+### Фотографии устройства
+
+<img src="rpi3_lte_case/images/assembled-case.png" alt="Напечатанный корпус с антеннами" width="480">
+
+<img src="rpi3_lte_case/images/raspberry-pi-lte-hat.png" alt="Raspberry Pi и Waveshare M.2 4G/5G HAT" width="480">
+
 ## Установка на Raspberry Pi
 
 Рекомендуется **Raspberry Pi OS Lite 64-bit** (Bookworm): без рабочего стола больше

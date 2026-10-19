@@ -1,0 +1,53 @@
+{
+  "base": {
+    "watertight": true,
+    "consistent_winding": true,
+    "connected_components": 1,
+    "bounds_mm": [
+      [
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        102.0,
+        72.0,
+        50.0
+      ]
+    ],
+    "volume_cm3": 45.92,
+    "triangles": 8016
+  },
+  "lid": {
+    "watertight": true,
+    "consistent_winding": true,
+    "connected_components": 1,
+    "bounds_mm": [
+      [
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        102.0,
+        72.0,
+        12.399999618530273
+      ]
+    ],
+    "volume_cm3": 19.33,
+    "triangles": 4960
+  },
+  "assembly": {
+    "base_lid_intersection_mm3": -5.25963821107478e-13,
+    "pcb_envelopes_clear": true,
+    "heatsink_height_mm": 15,
+    "heatsink_envelope_clear": true,
+    "heatsink_to_flat_roof_mm": 3.8,
+    "locator_tabs_outside_heatsink_xy": true,
+    "lid_bridge_count": 3,
+    "lid_bridge_height_mm": 10.0,
+    "lid_bridge_end_clearance_mm": 0.3,
+    "antenna_window_bottom_mm": 20.0,
+    "assembly_transform": "rotate X 180 degrees; translate Y 56, Z 52.4"
+  }
+}
